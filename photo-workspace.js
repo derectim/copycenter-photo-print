@@ -1,4 +1,3 @@
-import {createAccountAPI} from './account-api.js';
 import {openLibrary} from './photo-library.js';
 import {readPrintAsset} from './photo-input.js';
 
@@ -27,16 +26,16 @@ function qrCanvas(qrcode,text){
 export async function connectWorkspace(ui,data) {
   const local=!ui.endpoint ? await import('./demo-account.js'):null;
   let auth=local ? local.demoAuth():data.auth;
-  const api=createAccountAPI(ui.endpoint,()=>ui.sessid(),()=>auth?.userId);
+  const api=ui.api;
   const keys=new URL(location.href).searchParams;
   let draftId=keys.get('photo_draft') || crypto.randomUUID();
   let editJob=keys.get('photo_job') || null;
   let revision=0, last='',allowSave=false, blocked=false, timer, chain=Promise.resolve(), scheduled=false;
   let pollTimer, fetching=false, sessionEnding=false;
   const status=ui.$('draft-status');
+  let loginDialog, checkingLogin=false;
   const message=text=>{status.textContent=text;};
   function report(error) {
-    if(error.code==='AUTH_REQUIRED'){auth={...auth,authorized:false};profileLabel();}
     ui.feedback(error.message,'error');
   }
   const launch=fn=>async(...args)=>{try{return await fn(...args);}catch(e){report(e);}};
@@ -48,6 +47,50 @@ export async function connectWorkspace(ui,data) {
     if(editJob)url.searchParams.set('photo_job',editJob);else url.searchParams.delete('photo_job');
     history.replaceState(history.state,'',url);
   }
+  function pauseForLogin(error) {
+    if (local || loginDialog) return;
+    auth={...auth,authorized:false};
+    profileLabel();
+    const dialog=node('dialog','','print-dialog login-recovery');
+    const heading=node('h2','Войдите в тот же аккаунт');
+    heading.id='photo-login-title';
+    dialog.setAttribute('aria-labelledby', heading.id);
+    const header=node('div','','dialog-header'), content=node('div','','dialog-content'), actions=node('div','','dialog-actions');
+    const note=node('p',error.message);
+    note.setAttribute('role','status');
+    content.append(note,node('p','Оставьте эту вкладку открытой. Войдите в магазин в новой вкладке, затем вернитесь сюда. Фотографии и правки останутся в загрузчике.'));
+    const login=node('a','Войти на сайт','button primary');
+    const url=new URL(auth.loginUrl || '/bitrix/tools/copycenter.photoprint/signin.php',location.origin);
+    if (url.origin!==location.origin) throw Error('Проверьте адрес авторизации магазина.');
+    const finish=new URL(url.pathname,location.origin);
+    finish.searchParams.set('resume','1');
+    finish.searchParams.set('owner',String(auth.userId));
+    url.searchParams.set('backurl',finish.pathname+finish.search);
+    login.href=url.href;login.target='_blank';login.rel='noopener noreferrer';
+    const resume=button('Я вошёл, продолжить',resumeLogin);
+    header.append(heading);actions.append(login,resume);dialog.append(header,content,actions);
+    dialog.addEventListener('cancel',event=>event.preventDefault());
+    ui.$('dialogs').append(dialog);
+    loginDialog={dialog,note};
+    dialog.showModal();
+  }
+  async function resumeLogin() {
+    if (!loginDialog || checkingLogin) return;
+    checkingLogin=true;
+    try {
+      await api.refresh();
+      auth={...auth,authorized:true};
+      profileLabel();
+      loginDialog.dialog.close();loginDialog.dialog.remove();loginDialog=null;
+      if (phoneKey) await phoneScreen();
+      else if (!allowSave && keys.has('photo_draft')) await restore(draftId,{job:editJob,ignoreCurrent:true});
+      else await save(true);
+    } catch (error) {
+      if (loginDialog) loginDialog.note.textContent=error.message;
+      else report(error);
+    } finally { checkingLogin=false; }
+  }
+  api.onAuthRequired=pauseForLogin;
   function profile(after) {
     const dialog=ui.showDialog(auth?.authorized?'Аккаунт фотопечати':'Вход для загрузки фото');
     if(auth?.authorized){
@@ -278,12 +321,14 @@ export async function connectWorkspace(ui,data) {
   }else if(keys.has('photo_draft'))profile(()=>location.reload());
   document.addEventListener('visibilitychange',()=>{if(!document.hidden&&revision)fetchInbox();});
   window.addEventListener('beforeunload', event=>{
-    if (!allowSave || phoneKey || !auth?.authorized || (!revision&&!ui.rows().length)) return;
+    if (!allowSave || phoneKey || (!revision&&!ui.rows().length)) return;
     if (JSON.stringify(ui.snapshot())!==last) {
       event.preventDefault();event.returnValue='';
     }
   });
   window.addEventListener('pagehide',()=>{sessionEnding=true;clearTimeout(pollTimer);});
   window.addEventListener('pageshow',()=>{sessionEnding=false;if(revision)startPolling();});
+  window.addEventListener('focus',resumeLogin);
+  document.addEventListener('visibilitychange',()=>{if (!document.hidden) resumeLogin();});
   return { gate,changed,save,capture:photos=>gate(()=>saveSelection(photos)),get draftId(){return draftId;},get jobId(){return editJob;} };
 }

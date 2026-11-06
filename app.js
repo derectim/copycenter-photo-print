@@ -3,13 +3,15 @@ import { makeZip } from './zip.js';
 import { photoPreview, releasePreviews, createCropEditor, cropPose, setCropPose } from './photo-editor.js?v=2.1';
 import { constrainFrameEdits, layoutPrint, renderPrint } from './print-render.js';
 import { readPrintAsset } from './photo-input.js';
-import {connectWorkspace} from './photo-workspace.js?v=2.2';
-import {productionRuns, safePrintBasename} from './production-folders.js';
+import {createAccountAPI} from './account-api.js?v=2.3.1';
+import {connectWorkspace} from './photo-workspace.js?v=2.3.1';
+import {productionRuns, safePrintBasename} from './production-folders.js?v=2.2.3';
 
 const root = document.getElementById('print-app');
 const $ = (id) => root.querySelector('#' + id);
 const runtime = window.COPYCENTER_PRINT;
 const endpoint = runtime?.endpoint ? new URL(runtime.endpoint, location.href) : null;
+const accountAPI = createAccountAPI(endpoint);
 const fields = [
   { key: 'paperId', list: 'papers', allowed: 'paperIds', label: 'Бумага' },
   { key: 'fitId', list: 'fits', allowed: 'fitIds', label: 'Кадрирование' },
@@ -35,8 +37,6 @@ const id = () => {
 };
 let catalog;
 let catalogVersion;
-let sessid;
-let signedUserId;
 let groups = [];
 let active;
 let busy = false;
@@ -289,7 +289,10 @@ function renderPhoto(group, photo) {
   const details = el('div', 'photo-details', [photo.copies + ' шт.', byId('papers', photo.paperId).label, ...extraNames].join(' · '));
   meta.append(name, details);
   const controls = el('div', 'photo-actions');
+  const duplicate = button('Копировать', 'photo-copy', () => choosePhotoFormat(group, [photo], true));
+  duplicate.setAttribute('aria-label', 'Копировать ' + photo.asset.file.name);
   controls.append(iconButton('Редактировать ' + photo.asset.file.name, 'edit', () => editPhotos(group, [photo])),
+    duplicate,
     iconButton('Удалить ' + photo.asset.file.name, 'trash', () => {
       group.photos = group.photos.filter((item) => item !== photo);
       selectedPhotos.delete(photo);
@@ -300,8 +303,13 @@ function renderPhoto(group, photo) {
   const choose=el('label','photo-select');
   const check=el('input');
   check.type='checkbox';check.checked=selectedPhotos.has(photo);
+  card.classList.toggle('is-selected',check.checked);
   check.setAttribute('aria-label','Выбрать '+photo.asset.file.name);
-  check.addEventListener('change',()=>{check.checked?selectedPhotos.add(photo):selectedPhotos.delete(photo);selectionState();});
+  check.addEventListener('change',()=>{
+    if (check.checked) selectedPhotos.add(photo); else selectedPhotos.delete(photo);
+    card.classList.toggle('is-selected', check.checked);
+    selectionState();
+  });
   choose.append(check, document.createTextNode('Выбрать'));
   card.append(photoPreview(photo, format, catalog, 'photo-preview'), meta, controls, choose);
   return card;
@@ -311,7 +319,12 @@ function selectionState(){
   $('selection-tools').hidden=!active.photos.length;
   $('select-all-photos').checked=!!active.photos.length && picked.length===active.photos.length;
   $('select-all-photos').indeterminate=picked.length>0 && picked.length<active.photos.length;
-  for(const key of ['selection-edit','selection-delete','selection-store'])$(key).disabled=!picked.length;
+  for(const key of ['selection-edit','selection-delete','selection-store','selection-copy'])$(key).disabled=!picked.length;
+  $('selection-format').disabled=!picked.length || catalog.formats.length<2;
+  $('format-scope').textContent=picked.length ? 'Формат выбранных фото ('+picked.length+')' : 'Формат отпечатка';
+  for (const option of $('format-select').options) {
+    option.disabled = !picked.length && groups.some(group => group !== active && group.formatId === option.value);
+  }
 }
 function priceBreakdown(){
   const box=$('format-estimate');box.replaceChildren();
@@ -339,7 +352,6 @@ function render() {
   setOptions($('format-select'), catalog.formats, active.formatId);
   const physical=formatOf(active);
   $('format-physical').textContent=(physical.width*10).toLocaleString('ru-RU')+' × '+(physical.height*10).toLocaleString('ru-RU')+' мм';
-  for (const option of $('format-select').options) option.disabled = groups.some((g) => g !== active && g.formatId === option.value);
   bindOptionFields($('option-fields'), formatOf(active), active.defaults, updateDefaults, true);
   const groupSettings = [active.defaults, ...active.photos];
   bindExtras($('option-fields'), formatOf(active), groupSettings, (key, selected) => {
@@ -436,26 +448,48 @@ function editPhotos(group, photos, bulk = false) {
   dialog.dialog.classList.add('crop-dialog');
   const drafts = photos.map((photo) => ({ ...photo, crop: photo.crop ? { ...photo.crop } : null,
     edits: photo.edits ? structuredClone(photo.edits) : null, extraIds: [...(photo.extraIds || [])] }));
-  const format = formatOf(group);
+  let format = formatOf(group);
   const common = (key) => drafts.every((draft) => draft[key] === drafts[0][key]) ? drafts[0][key] : null;
-  const values = Object.fromEntries(fields.map(({ key }) => [key, common(key)]));
   const changedDefaults = {};
   const changedExtras = new Map();
-  const editor = createCropEditor(drafts, format, catalog, bulk, (frameId) => {
-    changedDefaults.frameId = frameId;
-    for (const draft of drafts) changePhoto(draft, {frameId}, format);
-  });
+  const settingsPanel = el('div', 'crop-settings');
   const controls = el('div', 'edit-options');
-  bindOptionFields(controls, format, values, (key, value) => {
-    if (key === 'fitId' || key === 'frameId') editor.flush();
-    changedDefaults[key] = value;
-    for (const draft of drafts) changePhoto(draft, { [key]: value }, format);
-    editor.redraw();
-  }, false);
-  bindExtras(controls, format, drafts, (key, selected) => {
-    changedExtras.set(key, selected);
-    for (const draft of drafts) toggleExtra(draft, key, selected);
-  }, false);
+  let editor;
+  function showFormat() {
+    const previous = editor;
+    editor = createCropEditor(drafts, format, catalog, bulk, (frameId) => {
+      changedDefaults.frameId = frameId;
+      for (const draft of drafts) changePhoto(draft, {frameId}, format);
+    });
+    if (previous) previous.element.replaceWith(editor.element);
+    else dialog.content.insertBefore(editor.element, settingsPanel);
+    const values = Object.fromEntries(fields.map(({ key }) => [key, common(key)]));
+    bindOptionFields(controls, format, values, (key, value) => {
+      if (key === 'fitId' || key === 'frameId') editor.flush();
+      changedDefaults[key] = value;
+      for (const draft of drafts) changePhoto(draft, { [key]: value }, format);
+      editor.redraw();
+    }, false);
+    bindExtras(controls, format, drafts, (key, selected) => {
+      changedExtras.set(key, selected);
+      for (const draft of drafts) toggleExtra(draft, key, selected);
+    }, false);
+  }
+  if (!bulk) {
+    const formatLabel = el('label', 'dialog-field', 'Формат отпечатка');
+    const formatSelect = el('select', 'option-select');
+    formatSelect.setAttribute('aria-label', 'Формат отпечатка');
+    setOptions(formatSelect, catalog.formats, format.id);
+    formatSelect.addEventListener('change', () => {
+      editor.flush();
+      const nextFormat = byId('formats', formatSelect.value);
+      changePhoto(drafts[0], settings(nextFormat, drafts[0]), nextFormat, format);
+      format = nextFormat;
+      showFormat();
+    });
+    formatLabel.append(formatSelect);
+    settingsPanel.append(formatLabel);
+  }
   const label = el('label', 'dialog-field', 'Количество экземпляров');
   const copies = el('input', 'option-select');
   Object.assign(copies, { type: 'number', min: '1', max: '999', step: '1', required: !bulk, value: common('copies') ?? '', placeholder: 'Разные значения' });
@@ -467,9 +501,9 @@ function editPhotos(group, photos, bulk = false) {
       : 'Изменения затронут только выделенные фотографии (' + photos.length + ' из ' + group.photos.length + ').';
     dialog.content.append(el('p', 'crop-scope', scope));
   }
-  const settingsPanel = el('div', 'crop-settings');
   settingsPanel.append(controls, label);
-  dialog.content.append(editor.element, settingsPanel);
+  dialog.content.append(settingsPanel);
+  showFormat();
   dialog.actions.append(button('Отмена', 'button secondary', dialog.close), button('Сохранить', 'button primary', () => {
     if (!copies.reportValidity()) return;
     editor.flush();
@@ -477,47 +511,160 @@ function editPhotos(group, photos, bulk = false) {
       if (copies.value) draft.copies = Number(copies.value);
       Object.assign(photos[index], draft);
     });
+    dialog.close();
+    if (format.id !== group.formatId) {
+      movePhotos(group, photos, format, {prepared:true});
+      return;
+    }
     if (entireFormat) {
       Object.assign(group.defaults, changedDefaults);
       for (const [key, selected] of changedExtras) toggleExtra(group.defaults, key, selected);
       if (copiesEdited && copies.value) group.defaults.copies = Number(copies.value);
     }
-    dialog.close();
     render();
   }));
 }
-function addFormat() {
-  const available = catalog.formats.filter((entry) => !groups.some((group) => group.formatId === entry.id));
-  if (!available.length || busy) return;
-  const dialog = showDialog('Добавить формат');
+function chooseFormatField(dialog, formats, value) {
   const label = el('label', 'dialog-field', 'Формат печати');
   const select = el('select', 'option-select');
-  setOptions(select, available, available[0].id);
+  setOptions(select, formats, value);
   label.append(select);
   dialog.content.append(label);
-  const duplicate = el('input');
-  duplicate.type = 'checkbox';
-  if (active.photos.length && allPhotos().length + active.photos.length <= limits.maxItems) {
-    const copyLabel = el('label', 'dialog-check');
-    copyLabel.append(duplicate, document.createTextNode(' Добавить снимки из формата ' + formatOf(active).label));
-    dialog.content.append(copyLabel);
+  return select;
+}
+function photoForFormat(source, previousFormat, targetFormat) {
+  const copy = {...source, edits:source.edits ? structuredClone(source.edits) : null,
+    crop:source.crop ? {...source.crop} : null};
+  changePhoto(copy, settings(targetFormat, source), targetFormat, previousFormat);
+  return copy;
+}
+function destinationGroup(format) {
+  let group = groups.find(entry => entry.formatId === format.id);
+  if (!group) {
+    group = makeGroup(format);
+    groups.push(group);
   }
+  return group;
+}
+function showAddedPhotos(group, photos, message, selectAdded = false) {
+  const first = group.photos.length;
+  group.photos.push(...photos);
+  group.page = Math.floor(first / PAGE_SIZE);
+  active = group;
+  selectedPhotos.clear();
+  if (selectAdded) for (const photo of photos) selectedPhotos.add(photo);
+  feedback(message);
+  render();
+}
+function movePhotos(sourceGroup, photos, targetFormat, {prepared = false} = {}) {
+  if (!photos.length || sourceGroup.formatId === targetFormat.id) return;
+  const moved = new Set(photos);
+  const ready = prepared ? photos : photos.map(photo => photoForFormat(photo, formatOf(sourceGroup), targetFormat));
+  const target = destinationGroup(targetFormat);
+  sourceGroup.photos = sourceGroup.photos.filter(photo => !moved.has(photo));
+  showAddedPhotos(target, ready, 'Перенесено в ' + targetFormat.label + ': ' + photos.length);
+}
+function exceedsPrintLimit(extra) {
+  return allPhotos().length + extra > limits.maxItems;
+}
+function printLimitText() {
+  return 'В заказе может быть до ' + limits.maxItems.toLocaleString('ru-RU') + ' снимков. Уменьшите количество выбранных фото.';
+}
+function choosePhotoFormat(group, photos, copy) {
+  if (busy || !photos.length) return;
+  const formats = catalog.formats.filter(format => copy || format.id !== group.formatId);
+  if (!formats.length) return;
+  const dialog = showDialog(copy ? 'Копировать фотографии' : 'Изменить формат выбранных фото');
+  const select = chooseFormatField(dialog, formats, copy ? group.formatId : formats[0].id);
+  dialog.content.append(el('p','review-note',copy
+    ? 'В выбранном формате появится по одной новой копии каждого снимка. Копии можно редактировать отдельно.'
+    : 'Выбранные снимки будут перенесены в этот формат с сохранением тиража.'));
+  const error = el('p', 'review-note');
+  error.setAttribute('role','alert');
+  dialog.content.append(error);
+  dialog.actions.append(button('Отмена', 'button secondary', dialog.close), button(copy ? 'Копировать' : 'Перенести', 'button primary', () => {
+    const format = byId('formats', select.value);
+    if (copy && exceedsPrintLimit(photos.length)) {
+      error.textContent = printLimitText();
+      return;
+    }
+    dialog.close();
+    if (!copy) { movePhotos(group, photos, format); return; }
+    const copies = photos.map(photo => ({...photoForFormat(photo, formatOf(group), format), copies:1}));
+    showAddedPhotos(destinationGroup(format), copies, 'Новые копии выделены в формате ' + format.label + ': ' + photos.length, true);
+  }));
+}
+function chooseCopiesForNewFormat(dialog) {
+  const rows = groups.flatMap(group => group.photos.map((photo, index) => ({group, photo, index})));
+  const picked = new Set(rows.filter(row => row.group === active && selectedPhotos.has(row.photo)));
+  if (!rows.length) return () => [];
+  const panel = el('fieldset', 'format-photo-picker');
+  panel.append(el('legend', '', 'Скопировать снимки из заказа'));
+  const toggle = el('label', 'format-pick-toggle');
+  const all = el('input');
+  all.type = 'checkbox';
+  toggle.append(all,document.createTextNode('Выбрать все снимки'));
+  const count = el('span', 'format-pick-count');
+  count.setAttribute('role', 'status');
+  const list = el('div', 'format-pick-list');
+  const pages = el('nav','photo-pagination');
+  let page = 0;
+  function updateCount() {
+    all.checked = picked.size === rows.length;
+    all.indeterminate = picked.size > 0 && picked.size < rows.length;
+    count.textContent = 'Выбрано: ' + picked.size + ' из ' + rows.length;
+  }
+  function showPage(index) {
+    page = index;
+    releasePreviews(list);
+    list.replaceChildren();
+    for (const row of rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)) {
+      const {group, photo} = row;
+      const format = formatOf(group);
+      const label = el('label', 'format-pick-photo');
+      const check = el('input');
+      check.type = 'checkbox';
+      check.checked = picked.has(row);
+      check.setAttribute('aria-label', 'Копировать ' + photo.asset.file.name + ', ' + format.label + ', позиция ' + (row.index + 1));
+      check.addEventListener('change', () => {
+        if (check.checked) picked.add(row); else picked.delete(row);
+        updateCount();
+      });
+      const text = el('span','format-pick-caption');
+      text.append(el('strong','',photo.asset.file.name),el('span','',format.label + ' · ' + photo.copies + ' шт.'));
+      label.append(check, photoPreview(photo, format, catalog, 'format-pick-preview'), text);
+      list.append(label);
+    }
+    pageNavigation(pages, rows.length, page, showPage);
+    updateCount();
+  }
+  all.addEventListener('change', () => {
+    picked.clear();
+    if (all.checked) rows.forEach(row => picked.add(row));
+    showPage(page);
+  });
+  panel.append(toggle,count,list,pages);
+  dialog.content.append(panel);
+  dialog.dialog.addEventListener('close',()=>releasePreviews(list),{once:true});
+  showPage(0);
+  return () => rows.filter(row => picked.has(row));
+}
+function addFormat() {
+  const available = catalog.formats.filter(format => !groups.some(group => group.formatId === format.id));
+  if (!available.length || busy) return;
+  const dialog = showDialog('Добавить формат');
+  const select = chooseFormatField(dialog, available, available[0].id);
+  const chosen = chooseCopiesForNewFormat(dialog);
+  const error = el('p','review-note');
+  error.setAttribute('role','alert');
+  dialog.content.append(error);
   dialog.actions.append(button('Отмена', 'button secondary', dialog.close), button('Добавить', 'button primary', () => {
     const format = byId('formats', select.value);
-    const group = makeGroup(format);
-    if (duplicate.checked) group.photos = active.photos.map((source) => {
-      const copy = { asset: source.asset, ...settings(format, source), crop: null,
-        edits: source.edits ? structuredClone(source.edits) : null };
-      if (copy.frameId !== source.frameId && copy.edits) delete copy.edits.frame;
-      constrainFrameEdits(copy,format,catalog);
-      if (source.crop) setCropPose(copy, format, catalog, cropPose(source, formatOf(active), catalog));
-      return copy;
-    });
-    groups.push(group);
-    active = group;
+    const rows = chosen();
+    if (exceedsPrintLimit(rows.length)) { error.textContent = printLimitText(); return; }
+    const copies = rows.map(({group, photo}) => photoForFormat(photo, formatOf(group), format));
     dialog.close();
-    feedback('');
-    render();
+    showAddedPhotos(destinationGroup(format), copies, 'Добавлен формат ' + format.label);
   }));
 }
 
@@ -606,28 +753,6 @@ async function loadSamples() {
   } catch (error) { feedback(error.message, 'error'); }
   finally { setBusy(false); render(); }
 }
-async function request(action, init = {}) {
-  if (endpoint.origin !== location.origin) throw Error('Адрес модуля должен находиться на домене магазина.');
-  const url = new URL(endpoint);
-  url.searchParams.set('action', action);
-  if (action!=='config' && signedUserId) {
-    init.headers={...init.headers,'X-Photoprint-User':String(signedUserId)};
-  }
-  let response;
-  try { response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', ...init }); }
-  catch { throw Error('Не удалось связаться с магазином. Проверьте соединение и повторите попытку.'); }
-  let body;
-  try { body = await response.json(); }
-  catch { throw Error('Магазин вернул неожиданный ответ. Повторите попытку позже.'); }
-  if (!response.ok || body.error) {
-    const error = Error(typeof body.error === 'string' ? body.error : 'Не удалось выполнить запрос к магазину.');
-    error.code = body.code;
-    error.missingAssetIds = body.missingAssetIds;
-    error.missingPrintIds = body.missingPrintIds;
-    throw error;
-  }
-  return body;
-}
 function renditionKey(group, photo) {
   return JSON.stringify([photo.asset.assetId, group.formatId, photo.fitId, photo.frameId, photo.crop || null, photo.edits || null, catalogVersion]);
 }
@@ -639,7 +764,6 @@ async function preparedId(group, photo, requiredKeys) {
   const jpeg = await renderPrint(photo, formatOf(group), catalog);
   if (jpeg.size > limits.maxFileBytes) throw Error('Подготовленный отпечаток «' + asset.file.name + '» больше ' + (limits.maxFileBytes / MiB).toLocaleString('ru-RU') + ' МБ.');
   const form = new FormData();
-  form.set('sessid', sessid);
   form.set('draftId', draftId);
   form.set('file', jpeg, 'print.jpg');
   form.set('assetId', asset.assetId);
@@ -651,7 +775,7 @@ async function preparedId(group, photo, requiredKeys) {
   form.set('catalogVersion', catalogVersion);
   const replaceKey = Array.from(asset.prints.keys()).find((candidate) => !requiredKeys.has(candidate));
   if (replaceKey) form.set('replacePrintId', asset.prints.get(replaceKey));
-  const data = await request('rendition', { method: 'POST', body: form });
+  const data = await accountAPI.call('rendition', form);
   if (!data.printId) throw Error('Магазин не подтвердил загрузку отпечатка. Повторите попытку.');
   if (replaceKey) asset.prints.delete(replaceKey);
   asset.prints.set(key, data.printId);
@@ -669,8 +793,7 @@ async function goToBasket(setProgress) {
     if (printId) keepPrints.add(printId);
   }
   setProgress('Проверяем состав загрузки…');
-  await request('prepare', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessid, draftId, assetIds: assets.map((asset) => asset.assetId).filter(Boolean), printIds: [...keepPrints] }) });
+  await accountAPI.call('prepare', { draftId, assetIds: assets.map((asset) => asset.assetId).filter(Boolean), printIds: [...keepPrints] });
   for (const asset of assets) {
     for (const [key, printId] of asset.prints || []) if (!keepPrints.has(printId)) asset.prints.delete(key);
   }
@@ -678,10 +801,9 @@ async function goToBasket(setProgress) {
     if (asset.assetId) continue;
     setProgress('Передаём фото ' + (index + 1) + ' из ' + assets.length + '…');
     const form = new FormData();
-    form.set('sessid', sessid);
     form.set('draftId', draftId);
     form.set('file', asset.file, asset.file.name);
-    const data = await request('upload', { method: 'POST', body: form });
+    const data = await accountAPI.call('upload', form);
     if (!data.assetId) throw Error('Магазин не подтвердил загрузку. Повторите попытку.');
     asset.assetId = data.assetId;
   }
@@ -698,9 +820,8 @@ async function goToBasket(setProgress) {
   setProgress('Добавляем печать в корзину…');
   const key = JSON.stringify(items);
   if (key !== checkoutKey) { checkoutKey = key; checkoutRequest = id(); }
-  const data = await request('basket', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessid, draftId, replaceJobId:workspace.jobId, editorPath:location.pathname, requestId: checkoutRequest, catalogVersion, renderVersion: 1, items, expectedTotal: groups.reduce((sum, group) => sum + subtotal(group), 0) / 100 })
+  const data = await accountAPI.call('basket', {
+    draftId, replaceJobId:workspace.jobId, editorPath:location.pathname, requestId: checkoutRequest, catalogVersion, renderVersion: 1, items, expectedTotal: groups.reduce((sum, group) => sum + subtotal(group), 0) / 100
   });
   if (!data.basketUrl) throw Error('Магазин не передал ссылку на корзину. Проверьте версию модуля фотопечати.');
   const url = new URL(data.basketUrl, location.href);
@@ -726,9 +847,7 @@ async function buildDemoOrder(number, center, setProgress) {
   };
   const runs = productionRuns(groups.flatMap(group => group.photos.map(photo => ({
     group, format: formatOf(group), photo, formatId: group.formatId, paperId: photo.paperId,
-    frameId: photo.frameId, frameStyle: byId('frames', photo.frameId).preview || photo.frameId,
-    fitId: photo.fitId, fitStyle: byId('fits', photo.fitId).preview || photo.fitId,
-    frameEdits: photo.edits?.frame, extraIds: photo.extraIds
+    extraIds: photo.extraIds
   }))));
   for (const {folder, rows} of runs) {
     for (const [index, {group, format, photo}] of rows.entries()) {
@@ -789,7 +908,7 @@ async function finishDemoOrder(dialog, message, number, center) {
   if (await synchronizeDemo()) return;
   let saved;
   try {
-    const { saveDemoOrder } = await import('./demo-orders.js?v=2.1');
+    const { saveDemoOrder } = await import('./demo-orders.js?v=2.2.3');
     saved = await saveDemoOrder(spec, blob);
     message.textContent = 'Демозаказ ' + number + ' сохранён. Архив доступен в разделе «Заказы» демоадминки этого браузера.';
   } catch {
@@ -864,7 +983,7 @@ async function review() {
     } catch (error) {
       message.textContent = error.name === 'QuotaExceededError' || error instanceof RangeError
         ? 'Браузеру не хватило места для подготовки архива. Освободите место или разделите заказ на части.' : error.message;
-      if (['PRICE_CHANGED', 'CATALOG_CHANGED', 'SESSION_EXPIRED', 'ASSET_EXPIRED', 'PRINT_EXPIRED'].includes(error.code)) {
+      if (['PRICE_CHANGED', 'CATALOG_CHANGED', 'ASSET_EXPIRED', 'PRINT_EXPIRED'].includes(error.code)) {
         try {
           if (error.code === 'ASSET_EXPIRED') {
             const expired = Array.isArray(error.missingAssetIds) ? new Set(error.missingAssetIds) : null;
@@ -955,7 +1074,7 @@ function validCatalog(data) {
 async function readCatalog() {
   let data;
   if (endpoint) {
-    data = await request('config');
+    data = await accountAPI.call('config');
   } else {
     const { readDemoCatalog } = await import('./admin-catalog.js');
     const catalog = readDemoCatalog();
@@ -971,7 +1090,6 @@ async function refreshCatalog(data) {
   const previous = catalog;
   catalog = data.catalog;
   applyLimits(data.limits);
-  sessid = data.sessid;
   catalogVersion = data.catalogVersion;
   const changes = new Set();
   const refreshed = new Map();
@@ -1031,13 +1149,19 @@ function bindControls() {
     else workspace?.gate(()=>$('file-input').click());
   });
   root.addEventListener('click', (event) => {
-    if (busy && !event.target.closest('dialog')) { event.preventDefault(); event.stopImmediatePropagation(); }
+    if (!busy || event.target.closest('dialog')) return;
+    // Navigation is safe while the editor is still opening. Keep edits and submissions protected once it is ready.
+    if (!workspace && event.target.closest('.print-breadcrumbs a')) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
   }, true);
   $('add-format').addEventListener('click', addFormat);
   $('bulk-edit')?.addEventListener('click', () => editPhotos(active, active.photos, true));
   $('format-select').addEventListener('change', (event) => {
     const previousFormat = formatOf(active);
     const format = byId('formats', event.target.value);
+    const selected = active.photos.filter(photo => selectedPhotos.has(photo));
+    if (selected.length) { movePhotos(active, selected, format); return; }
     active.formatId = format.id;
     active.defaults = settings(format, active.defaults);
     for (const photo of active.photos) changePhoto(photo, settings(format, photo), format, previousFormat);
@@ -1062,6 +1186,8 @@ function bindControls() {
   });
   const picked=()=>active.photos.filter(photo=>selectedPhotos.has(photo));
   $('selection-edit').onclick=()=>editPhotos(active,picked(),true);
+  $('selection-format').onclick=()=>choosePhotoFormat(active,picked(),false);
+  $('selection-copy').onclick=()=>choosePhotoFormat(active,picked(),true);
   $('selection-store').onclick=()=>workspace?.capture(picked());
   $('selection-delete').onclick=()=>{
     const remove=picked();
@@ -1151,12 +1277,10 @@ async function initialize() {
     catalog = data.catalog;
     applyLimits(data.limits);
     catalogVersion = data.catalogVersion;
-    sessid = data.sessid;
-    signedUserId = data.auth?.userId;
     active = makeGroup(catalog.formats[0]);
     groups = [active];
     bindControls();
-    workspace=await connectWorkspace({root,$,endpoint,sessid:()=>sessid,showDialog,feedback,
+    workspace=await connectWorkspace({root,$,endpoint,api:accountAPI,showDialog,feedback,
       snapshot:draftSnapshot,restore:restoreRows,reset:()=>replaceRows([makeGroup(catalog.formats[0])],catalog.formats[0].id),
       rows:allPhotos,busy:()=>busy,activeFormat:()=>active.formatId,loadFiles,addRemote:addPhonePhoto,
       containsAsset:(id,fmt)=>groups.some(g=>g.formatId===(byId('formats',fmt)?.id||catalog.formats[0].id)&&g.photos.some(p=>p.asset.assetId===id))},data);

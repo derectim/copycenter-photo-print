@@ -30,7 +30,7 @@ export function printOrderText(spec) {
     'Количество отпечатков: ' + spec.totalCopies,
     'Стоимость печати: ' + rubles.format(spec.total),
     '',
-    'Для печати откройте папку нужных параметров и отправьте каждый JPEG в печать один раз.',
+    'Кадрирование, рамки и поля уже включены в JPEG. Печатайте каждый файл один раз без добавления рамки и полей.',
     '',
     ...(spec.formats || []).map(f => f.label + ' · ' + f.copies + ' шт. · ' + rubles.format(f.total)),
     ''

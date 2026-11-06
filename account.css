@@ -48,3 +48,4 @@
 #print-app .draft-row {display:grid;gap:5px;border-bottom:1px solid var(--line);padding:8px 0}
 #print-app .draft-row p {margin:0;font-size:14px;color:var(--muted)}
 @media(max-width:650px){#print-app .library-toolbar {grid-template-columns:1fr 1fr}#print-app .library-toolbar label:first-child {grid-column:1/-1}#print-app .profile-button{margin-left:0}#print-app .lib-actions .button,#print-app .lib-albums .button{padding:8px 10px}}
+#print-app dialog.login-recovery::backdrop { background:#f6f6f3; }

@@ -1,6 +1,6 @@
 @import url("./extras.css");
 @import url("./photo-editor.css?v=2.1");
-@import url("./account.css");
+@import url("./account.css?v=2.3.1");
 
 @font-face {
   font-family: PrintManrope;
@@ -196,32 +196,47 @@
 #print-app .print-breadcrumbs ol {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 8px;
+  align-items: baseline;
+  gap: 2px 7px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 #print-app .print-breadcrumbs li {
-  display: flex;
+  display: inline-flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 7px;
   max-width: 100%;
   margin: 0;
   padding: 0;
+  list-style: none;
+  background: none;
+}
+
+#print-app .print-breadcrumbs a,
+#print-app .print-breadcrumbs [aria-current="page"] {
+  padding-block: 2px;
+  font: inherit;
 }
 
 #print-app .print-breadcrumbs a {
-  display: inline-block;
-  padding-block: 2px;
-  color: inherit;
+  color: #343e5c;
+  text-decoration: none;
+}
+
+#print-app .print-breadcrumbs a:hover,
+#print-app .print-breadcrumbs a:focus-visible {
+  color: var(--ink);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 
-#print-app .print-breadcrumbs a:hover,
-#print-app .print-breadcrumbs [aria-current="page"] {
-  color: var(--ink);
+#print-app .print-breadcrumbs li::before,
+#print-app .print-breadcrumbs li::after,
+#print-app .how li::before,
+#print-app .how li::after {
+  content: none;
 }
 
 #print-app button {
@@ -283,16 +298,31 @@
   right: 0;
   top: calc(100% + 8px);
   z-index: 5;
-  width: min(320px,85vw);
+  width: min(400px,calc(100vw - 32px));
   padding: 20px;
   border: 1px solid var(--line);
   background: white;
   border-radius: 14px;
   box-shadow: 0 8px 26px #292c2418;
+  text-align: left;
 }
 
 #print-app .how ol {
-  padding-left: 21px;
+  margin: 12px 0 0;
+  padding: 0 0 0 1.4em;
+  list-style: decimal outside;
+}
+
+#print-app .how li {
+  display: list-item;
+  margin: 0;
+  padding: 0 0 0 0.15em;
+  list-style: decimal outside;
+  background: none;
+}
+
+#print-app .how li + li {
+  margin-top: 8px;
 }
 
 #print-app .demo-delivery {
@@ -1138,13 +1168,19 @@
     font-size: 26px;
   }
 
+  #print-app .how {
+    width: 100%;
+  }
+
   #print-app .how>div {
-    left: 0;
-    right: auto;
-    max-width: calc(100vw - 36px);
+    position: static;
+    width: 100%;
+    margin-top: 8px;
+    padding: 16px;
   }
 
   #print-app .how summary {
+    width: fit-content;
     font-size: 14px;
     gap: 4px;
   }
@@ -1272,4 +1308,50 @@
     order: 3;
     margin: 0;
   }
+}
+
+/* Choosing print formats and making independent copies of individual prints. */
+#print-app .dialog-content > .review-note[role="alert"]:empty {display:none}
+#print-app .photo-card.is-selected {border-color:#ad7d19}
+#print-app .photo-actions {flex-wrap:wrap}
+#print-app .photo-actions .photo-copy {
+  min-height:33px;
+  padding:4px 7px;
+  border:1px solid var(--line);
+  border-radius:7px;
+  background:white;
+  font-size:14px;
+}
+#print-app .photo-actions .photo-copy:hover {background:#f4f5ef}
+#print-app .format-photo-picker {
+  min-width:0;
+  margin:0;
+  padding:0;
+  border:0;
+}
+#print-app .format-photo-picker legend {margin:0 0 8px;padding:0;font-size:16px;font-weight:700}
+#print-app .format-pick-toggle {display:inline-flex;align-items:center;gap:7px;font-size:14px}
+#print-app .format-pick-count {display:block;margin:6px 0;color:var(--muted);font-size:14px}
+#print-app .format-pick-list {max-height:min(34vh,300px);overflow:auto;overscroll-behavior:contain}
+#print-app .format-pick-photo {
+  display:grid;
+  grid-template-columns:auto 54px minmax(0,1fr);
+  gap:10px;
+  align-items:center;
+  padding:6px 3px;
+  border-bottom:1px solid var(--line);
+  cursor:pointer;
+}
+#print-app .format-pick-photo input, #print-app .format-pick-toggle input {width:16px;height:16px;margin:0}
+#print-app .format-pick-caption {display:grid;overflow-wrap:anywhere;font-size:14px}
+#print-app .format-pick-caption > span {color:var(--muted)}
+#print-app .format-pick-preview {
+  --preview-stage-height:48px;
+  --preview-padding:3px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  height:var(--preview-stage-height);
+  padding:var(--preview-padding);
+  background:#edf0e8;
 }

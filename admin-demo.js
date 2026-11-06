@@ -25,7 +25,7 @@ const descriptions = {
   formats:'Размер отпечатка, доступные опции и цена за тираж.',
   options:'Общие доплаты за отпечаток. Для отдельных форматов можно задать свою цену.',
   centers:'Эти пункты доступны при оформлении демонстрационного заказа.',
-  orders:'В новых ZIP каждый JPEG — один экземпляр. Папки обозначают формат, бумагу, рамку и поля. Спецификация доступна отдельно.'
+  orders:'В новых ZIP рамки и поля уже входят в JPEG. Печатайте каждый файл один раз без добавления рамки и полей.'
 };
 let catalog = readDemoCatalog();
 let page = location.hash === '#orders' ? 'orders' : 'formats';
@@ -92,7 +92,7 @@ function renderOrders(entries) {
       const link = node('a','Перейти в конструктор','adm-btn secondary');
       link.href = './#print-app';
       const sample = node('a','Скачать пример ZIP','adm-btn secondary');
-      sample.href = './examples/KIT_DEMO-PRINT.zip';
+      sample.href = './examples/KIT_DEMO-PRINT.zip?v=2.2.3';
       sample.download = 'KIT_DEMO-PRINT.zip';
       const actions = node('div', null, 'adm-actions');
       actions.append(link, sample);

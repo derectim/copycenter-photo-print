@@ -1,5 +1,5 @@
 import {vault, sweep, allowBytes} from './demo-vault.js';
-import {printOrderText} from './print-order-text.js?v=2.1';
+import {printOrderText} from './print-order-text.js?v=2.2.3';
 
 export const ORDER_CHANNEL = 'copycenter-demo-orders-updates';
 

@@ -8,9 +8,9 @@
   <meta name="referrer" content="same-origin">
   <title>Загрузчик фотографий для лабораторной фотопечати — Копицентр.РФ</title>
   <link rel="icon" href="./assets/brand-icon.png">
-  <link rel="stylesheet" href="./style.css?v=2.2.2">
+  <link rel="stylesheet" href="./style.css?v=2.3.1">
   <script src="./icons.js" defer></script>
-  <script type="module" src="./app.js?v=2.2.1"></script>
+  <script type="module" src="./app.js?v=2.3.1"></script>
   <script type="module" src="./prices.js"></script>
 </head>
 <body class="photo-demo">
@@ -30,10 +30,10 @@
       <!--editor-breadcrumbs:start-->
       <nav class="print-breadcrumbs" aria-label="Хлебные крошки">
         <ol role="list">
-          <li><a href="https://копицентр.рф/">Главная страница</a></li>
-          <li><span aria-hidden="true">»</span><a href="https://копицентр.рф/service/">Услуги копицентров</a></li>
-          <li><span aria-hidden="true">»</span><a href="./service.html">Печать фотографий в Москве</a></li>
-          <li><span aria-hidden="true">»</span><span aria-current="page">Загрузчик фотографий</span></li>
+          <li><a href="https://копицентр.рф/">Главная страница</a><span aria-hidden="true">»</span></li>
+          <li><a href="https://копицентр.рф/service/">Услуги копицентров</a><span aria-hidden="true">»</span></li>
+          <li><a href="./service.html">Печать фотографий в Москве</a><span aria-hidden="true">»</span></li>
+          <li><span aria-current="page">Загрузчик фотографий</span></li>
         </ol>
       </nav>
       <!--editor-breadcrumbs:end-->
@@ -70,6 +70,8 @@
               <div id="selection-tools" class="photo-tools" hidden>
                 <label><input id="select-all-photos" type="checkbox"> Выбрать все</label>
                 <button type="button" id="selection-edit">Изменить выбранные</button>
+                <button type="button" id="selection-format">Изменить формат</button>
+                <button type="button" id="selection-copy">Копировать</button>
                 <button type="button" id="selection-store">В библиотеку</button>
                 <button type="button" id="selection-delete">Удалить</button>
                 <button type="button" id="view-mode" aria-pressed="false">Список</button>
@@ -96,7 +98,7 @@
         <aside class="panel settings" aria-labelledby="settings-title">
           <div class="panel-head"><h2 id="settings-title"><i data-icon="sliders"></i> Параметры печати</h2></div>
           <div class="setting-body">
-            <label class="field"><span>Формат отпечатка</span><select id="format-select"></select><small id="format-physical"></small></label>
+            <label class="field"><span id="format-scope">Формат отпечатка</span><select id="format-select" aria-labelledby="format-scope"></select><small id="format-physical"></small></label>
             <div id="option-fields"></div>
             <div class="copies-line"><label for="copies-input">Копий каждого фото</label><div class="stepper"><button id="copies-minus" type="button" aria-label="Уменьшить число копий">−</button><input id="copies-input" type="number" min="1" max="999" value="1"><button id="copies-plus" type="button" aria-label="Увеличить число копий">+</button></div></div>
           </div>

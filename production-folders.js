@@ -1,5 +1,4 @@
 const safeCode = /^[A-Za-z0-9][A-Za-z0-9-]{0,31}$/;
-const frameEdges = ['left', 'top', 'right', 'bottom'];
 const encoder = new TextEncoder();
 
 function checkCode(value) {
@@ -7,43 +6,19 @@ function checkCode(value) {
   return value;
 }
 
-function frameMillimeters(frame) {
-  if (!frame || !frameEdges.some(edge => frame[edge] != null)) return '';
-  return frameEdges.map(edge => {
-    if (frame[edge] == null) return 'd';
-    const mm = frame[edge];
-    if (!Number.isFinite(mm) || mm < 0 || mm > 5000) throw Error('Проверьте размеры полей рамки.');
-    return Number(mm.toFixed(6)).toString();
-  }).join('-');
-}
-
-// The archive's folder describes machine/production settings. Per-photo crop,
-// rotation and tone are already applied to the JPEG and do not split a print run.
+// Frames, margins and crops were rendered into each JPEG. Group by the settings
+// that the operator still needs to apply to these full-size sheets.
 function folderIdentity(row) {
-  const {formatId, paperId, fitId, fitStyle, frameId, frameStyle} = row;
-  [formatId, paperId, fitId, fitStyle, frameId, frameStyle].forEach(checkCode);
+  const formatId = checkCode(row.formatId);
+  const paperId = checkCode(row.paperId);
   const extraIds = [...(row.extraIds || [])].map(checkCode).sort();
   if (new Set(extraIds).size !== extraIds.length) throw Error('Проверьте дополнительные услуги печати.');
-  const frame = frameStyle === 'none' ? null : row.frameEdits;
-  const mmPart = frameMillimeters(frame);
-  if (frame?.color != null && (typeof frame.color !== 'string' || !/^#[a-f0-9]{6}$/i.test(frame.color))) {
-    throw Error('Проверьте цвет рамки.');
-  }
-  const colorPart = frame?.color?.slice(1).toLowerCase() || '';
   const paper = paperId === 'mt' ? 'mat' : paperId;
-  const frameCode = frameStyle === 'none' ? 'br' : 'sr';
-  const fieldCode = fitStyle === 'contain' ? 'sp' : 'bp';
-  const parts = [formatId, paper, frameCode + fieldCode];
-  if (frameId !== frameStyle || !['white', 'none'].includes(frameId)) {
-    parts.push('ram-' + frameId + (frameId !== frameStyle ? '-' + frameStyle : ''));
-  }
-  if (fitId !== fitStyle || !['contain', 'cover'].includes(fitId)) parts.push('fit-' + fitId + '-' + fitStyle);
-  if (mmPart) parts.push('mm-' + mmPart);
-  if (colorPart) parts.push('c-' + colorPart);
+  const parts = [formatId, paper, 'brbp'];
   for (const id of extraIds) parts.push('opt-' + id);
   const candidate = parts.join('_');
   return {
-    key: [formatId, paperId, fitId, fitStyle, frameId, frameStyle, mmPart, colorPart, ...extraIds].join('|'),
+    key: ['@jpeg', formatId, paperId, ...extraIds].join('|'),
     candidate: candidate.length > 180 ? candidate.slice(0, 175) + '-more' : candidate
   };
 }
