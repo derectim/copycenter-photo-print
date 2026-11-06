@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Загрузите фотографии, выберите формат, бумагу и тираж. Демонстрация конструктора фотопечати Копицентр.РФ.">
   <meta name="robots" content="noindex,nofollow">
+  <meta name="referrer" content="same-origin">
   <title>Печать фотографий онлайн — Копицентр.РФ</title>
   <link rel="icon" href="./assets/brand-icon.png">
   <link rel="stylesheet" href="./style.css">
@@ -48,6 +49,14 @@
         <h2 id="constructor-title">Конструктор печати</h2>
         <details class="how"><summary><i data-icon="help"></i> Как заказать</summary><div><strong>Как оформить заказ</strong><ol><li>Добавьте фото и выберите формат печати.</li><li>Обрежьте отдельный кадр или отредактируйте снимки формата вместе. Для 10 × 10 доступны рамки «Полароид».</li><li>Проверьте тираж, выберите копицентр и перейдите к оформлению.</li></ol><p class="demo-only">В демонстрации можно скачать пробный архив. Оплата отключена.</p></div></details>
       </div>
+      <div class="account-tools" aria-label="Фотографии и заказы">
+        <button id="library-open" type="button"><i data-icon="images"></i> Моя библиотека</button>
+        <button id="phone-open" type="button"><i data-icon="qr"></i> С телефона по QR</button>
+        <button id="drafts-open" type="button"><i data-icon="folder"></i> Черновики</button>
+        <button id="projects-open" type="button" hidden>Проекты в корзине</button>
+        <button id="profile-open" class="profile-button" type="button"><i data-icon="user"></i> Войти</button>
+      </div>
+      <div id="phone-screen" hidden></div>
       <div class="work-grid">
         <div class="work-left">
           <div class="panel workspace">
@@ -62,15 +71,25 @@
                 <div class="drop-symbol" aria-hidden="true"><span></span><i data-icon="image"></i><b>+</b></div>
                 <strong>Перетащите фотографии сюда</strong>
                 <span class="drop-hint">JPG, PNG, WebP, HEIC и HEIF</span>
-                <span class="drop-hint" data-order-limits>До 20 МБ за файл и 20 ГБ оригиналов на заказ</span>
+                <span class="drop-hint" data-order-limits>До 20 МБ за файл. Общее хранилище — 20 ГБ.</span>
                 <button type="button" class="button primary" id="upload-button" data-action="upload"><i data-icon="upload"></i> Выбрать файлы</button>
               </div>
               <div id="photos" aria-label="Загруженные фотографии"></div>
+              <div id="selection-tools" class="photo-tools" hidden>
+                <label><input id="select-all-photos" type="checkbox"> Выбрать все</label>
+                <button type="button" id="selection-edit">Изменить выбранные</button>
+                <button type="button" id="selection-store">В библиотеку</button>
+                <button type="button" id="selection-delete">Удалить</button>
+                <button type="button" id="view-mode" aria-pressed="false">Список</button>
+                <button type="button" id="view-fullscreen">Во весь экран</button>
+                <label>Размер превью <input id="view-scale" type="range" min="120" max="320" value="185"></label>
+              </div>
               <button id="more-files" type="button" data-action="upload" class="button secondary"><i data-icon="plus"></i> Добавить ещё фото</button>
               <button id="bulk-edit" type="button" class="button secondary" hidden><i data-icon="edit"></i> Редактировать все фото</button>
               <div id="feedback" role="status" aria-live="polite"></div>
             </div>
             <div class="privacy"><i data-icon="shield"></i><span data-privacy>В демо ваши фотографии остаются в браузере.</span></div>
+            <div id="draft-status" class="draft-status" role="status"></div>
           </div>
           <!--demo-tariffs:start-->
           <section id="price-info" class="price-info panel" aria-labelledby="prices-title">
@@ -85,12 +104,13 @@
         <aside class="panel settings" aria-labelledby="settings-title">
           <div class="panel-head"><h3 id="settings-title"><i data-icon="sliders"></i> Параметры печати</h3></div>
           <div class="setting-body">
-            <label class="field"><span>Формат отпечатка</span><select id="format-select"></select></label>
+            <label class="field"><span>Формат отпечатка</span><select id="format-select"></select><small id="format-physical"></small></label>
             <div id="option-fields"></div>
             <div class="copies-line"><label for="copies-input">Копий каждого фото</label><div class="stepper"><button id="copies-minus" type="button" aria-label="Уменьшить число копий">−</button><input id="copies-input" type="number" min="1" max="999" value="1"><button id="copies-plus" type="button" aria-label="Увеличить число копий">+</button></div></div>
             <label class="field center-select"><span><i data-icon="pin"></i> Пункт выдачи</span><select id="center-select"></select></label>
           </div>
           <div class="summary">
+            <section id="format-estimate" class="format-estimate" aria-label="Стоимость по форматам" hidden></section>
             <div><span>Цена за отпечаток</span><b id="summary-price">—</b></div>
             <div><span>Всего отпечатков</span><b id="summary-count">0</b></div>
             <div class="total"><strong>Итого</strong><strong id="summary-total">0 ₽</strong></div>

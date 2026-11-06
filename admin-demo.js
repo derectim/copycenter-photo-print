@@ -1,6 +1,18 @@
 import { demoCatalog, frameStyles } from './catalog.js';
 import { assignment, sectionLabels, DEMO_CATALOG_KEY, readDemoCatalog, saveDemoCatalog } from './admin-catalog.js';
 import { ORDER_CHANNEL, listDemoOrders, readDemoOrder, removeDemoOrder } from './demo-orders.js';
+import {demoUsage} from './demo-account.js';
+
+async function refreshStorage(){
+  try {
+    const {used,limit}=await demoUsage();
+    const size=n=>n<1e9?(n/1e6).toLocaleString('ru-RU',{maximumFractionDigits:1})+' МБ':(n/1e9).toLocaleString('ru-RU',{maximumFractionDigits:2})+' ГБ';
+    document.querySelector('#demo-usage').textContent='Занято '+size(used)+' из '+size(limit)+'. Свободно '+size(limit-used)+'.';
+    document.querySelector('#demo-meter').value=used;
+  }catch{document.querySelector('#demo-usage').textContent='Браузер не предоставил доступ к хранилищу.';}
+}
+refreshStorage();window.addEventListener('focus',refreshStorage);
+if(typeof BroadcastChannel==='function')new BroadcastChannel(ORDER_CHANNEL).addEventListener('message',refreshStorage);
 
 const $ = selector => document.querySelector(selector);
 const dialog = $('#admin-dialog');

@@ -1,5 +1,8 @@
 (() => {
   const paths = {
+    qr: '<rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><path d="M14 14h3v3h4v4h-3m-4-3v3"/>',
+    folder: '<path d="M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>',
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>',
     pin: '<path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.6"/>',
     external: '<path d="M7 17 17 7M7 7h10v10"/>',
     tag: '<path d="M3 4h8l10 10-7 7L3 10z"/><circle cx="7.5" cy="7.8" r="1"/>',

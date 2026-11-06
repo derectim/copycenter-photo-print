@@ -1,38 +1,95 @@
-#print-app .crop-sheet {position: relative; overflow: hidden; padding: 0}
-#print-app .crop-image-window {position: absolute; overflow: hidden}
-#print-app .crop-image-window img {position: absolute; display: block; max-width: none; max-height: none; object-fit: fill; user-select: none}
-#print-app .print-dialog.crop-dialog {width: min(930px, calc(100vw - 26px)); overflow: hidden}
-#print-app .crop-dialog .dialog-body {max-height: 89dvh; display: flex; flex-direction: column}
+#print-app .print-dialog.crop-dialog {
+  width: min(1120px, calc(100vw - 24px));
+  overflow: hidden;
+}
+#print-app .crop-dialog .dialog-body {
+  max-height: 90vh;
+  max-height: 90dvh;
+  display: flex;
+  flex-direction: column;
+}
 #print-app .crop-dialog .dialog-header, #print-app .crop-dialog .dialog-actions {flex: none}
 #print-app .crop-dialog .dialog-content {min-height: 0; overflow-y: auto; overscroll-behavior: contain}
 #print-app .crop-settings {display: grid; gap: 14px; align-content: start}
-#print-app .crop-editor {display: grid; gap: 10px; min-width: 0}
+#print-app .crop-editor {display: grid; gap: 12px; min-width: 0}
+#print-app .print-sheet.snapshot-proof {
+  width: min(100cqw,calc(var(--sheet-ratio) * 100cqh));
+  height: min(100cqh,calc(100cqw / var(--sheet-ratio)));
+  background: #fff;
+}
 #print-app .crop-navigation {display: flex; align-items: center; justify-content: center; gap: 12px}
-#print-app .crop-filename {font-size: 14px; text-align: center; overflow-wrap: anywhere}
-#print-app .crop-stage {height: clamp(180px, 30vh, 320px); cursor: grab; touch-action: none}
-#print-app .crop-stage.dragging {cursor: grabbing}
-#print-app .crop-hint, #print-app .crop-scope {margin: 0; font-size: 14px; color: var(--muted)}
-#print-app .crop-scope {margin: 0 0 12px}
-#print-app .crop-ranges {display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px}
+#print-app .crop-filename {font-size: 15px; text-align: center; overflow-wrap: anywhere}
+#print-app .edit-views {display: grid; grid-template-columns: minmax(0,1.6fr) minmax(0,1fr); gap: 10px}
+#print-app .edit-pane {min-width: 0}
+#print-app .edit-views.source-expanded {grid-template-columns: 1fr}
+#print-app .source-expanded .edit-pane:last-child {display: none}
+#print-app .source-expanded .editor-source-stage {height: clamp(270px,57dvh,560px)}
+#print-app .edit-view-label {display: block; margin: 0 0 6px; color: var(--muted); font-size: 14px; font-weight: 700}
+#print-app .editor-source-stage, #print-app .editor-proof-stage {
+  display: grid; place-items: center; height: clamp(175px,29vh,300px);
+  container-type: size; padding: 10px; border-radius: 9px; background: #eceee6;
+}
+#print-app .editor-source-sheet {
+  width: min(100cqw,calc(var(--source-ratio) * 100cqh));
+  height: min(100cqh,calc(100cqw / var(--source-ratio)));
+  position: relative; overflow: hidden; background: #e7e8df;
+}
+#print-app .editor-source {display: block; width: 100%; height: 100%}
+#print-app .editor-proof {
+  display: block; width: min(100cqw,calc(var(--sheet-ratio) * 100cqh));
+  height: min(100cqh,calc(100cqw / var(--sheet-ratio)));
+  box-shadow: 0 3px 9px #20231c26;
+}
+#print-app .editor-crop-box {
+  position: absolute; outline: 2px solid #ffcc49; outline-offset: -2px; cursor: move;
+  box-shadow: 0 0 0 2000px #16201970; touch-action: none;
+}
+#print-app .editor-crop-box:focus-visible, #print-app .crop-handle:focus-visible {outline: 3px solid #1376b4; outline-offset: -3px}
+#print-app .crop-handle {
+  position: absolute; width: 30px; height: 30px; min-width: 0; padding: 0; border: none; background: transparent;
+  touch-action: none; border-radius: 0;
+}
+#print-app .crop-handle::before {content: ""; position: absolute; width: 11px; height: 11px; background: white; border: 1px solid #604d20}
+#print-app .crop-handle.nw {top: 0; left: 0; cursor: nwse-resize}
+#print-app .crop-handle.ne {top: 0; right: 0; cursor: nesw-resize}
+#print-app .crop-handle.sw {bottom: 0; left: 0; cursor: nesw-resize}
+#print-app .crop-handle.se {bottom: 0; right: 0; cursor: nwse-resize}
+#print-app .crop-handle.nw::before, #print-app .crop-handle.ne::before {top: 0}
+#print-app .crop-handle.sw::before, #print-app .crop-handle.se::before {bottom: 0}
+#print-app .crop-handle.nw::before, #print-app .crop-handle.sw::before {left: 0}
+#print-app .crop-handle.ne::before, #print-app .crop-handle.se::before {right: 0}
+#print-app .crop-hint, #print-app .crop-scope, #print-app .photo-quality {margin: 0; font-size: 14px; color: var(--muted)}
+#print-app .photo-quality[data-low=true] {color: #864d14}
+#print-app .edit-tool-row, #print-app .editor-proof-actions, #print-app .editor-tabs {display: flex; align-items: center; flex-wrap: wrap; gap: 6px}
+#print-app .editor-tabs {border-bottom: 1px solid var(--line); padding-bottom: 6px}
+#print-app .editor-tab-panel, #print-app .editor-field {display: grid; align-content: start; gap: 9px}
+#print-app .editor-field {font-size: 14px; font-weight: 650; gap: 5px}
+#print-app .editor-field input[type=color] {height: 35px; width: 80px; padding: 3px; background: #fff; border: 1px solid var(--line); border-radius: 6px}
+#print-app .editor-field input[type=number] {width: 100%; min-width: 0; padding: 7px; border: 1px solid var(--line); border-radius: 6px}
+#print-app .editor-edges {display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px}
+#print-app .edit-tone-grid {display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px 15px}
 #print-app .crop-control {display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px; font-size: 14px}
 #print-app .crop-control input {width: 100%; min-width: 0; grid-column: 1 / -1; accent-color: #806000}
 #print-app .crop-value {color: var(--muted); font-variant-numeric: tabular-nums}
-#print-app .crop-command {justify-self: start; padding: 7px 12px; background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 7px; font-size: 14px; cursor: pointer}
+#print-app .crop-command {justify-self: start; padding: 7px 12px; background: white; color: var(--ink); border: 1px solid var(--line); border-radius: 7px; font-size: 14px; cursor: pointer}
+#print-app .crop-command[aria-pressed=true] {background: var(--tint); border-color: #c7962e}
 #print-app .crop-command:disabled {opacity: .55; cursor: default}
 #print-app .crop-navigation .crop-command {font-size: 20px; line-height: 1; min-width: 35px}
 #print-app .photo-pagination {display: flex; align-items: center; justify-content: center; gap: 8px; margin-block: 12px}
 #print-app .photo-pagination .option-select {width: auto; max-width: 65%}
 @media(min-width:760px) {
-  #print-app .crop-dialog .dialog-content {grid-template-columns: minmax(0,1.4fr) minmax(0,1fr); gap: 16px 22px; align-items: start}
-  #print-app .crop-dialog .crop-scope {grid-column: 1 / -1; margin-bottom: 0}
-  #print-app .crop-dialog .crop-ranges {grid-template-columns: 1fr}
-  #print-app .crop-dialog .crop-control {grid-template-columns: minmax(105px,1fr) 44px minmax(80px,1.35fr)}
-  #print-app .crop-dialog .crop-control input {grid-column: auto}
-  #print-app .crop-editor .crop-stage {height: clamp(220px,34vh,340px)}
+  #print-app .crop-dialog .dialog-content {grid-template-columns: minmax(0,2.2fr) minmax(230px,1fr); gap: 16px 22px; align-items: start}
+  #print-app .crop-dialog .crop-scope {grid-column: 1 / -1}
+  #print-app .editor-tab-panel > .crop-control {grid-template-columns: minmax(115px,1fr) 46px minmax(80px,1.65fr)}
+  #print-app .editor-tab-panel > .crop-control input {grid-column: auto}
   #print-app .crop-settings .edit-options {grid-template-columns: 1fr}
 }
-@media(max-width:600px) {
-  #print-app .crop-ranges {grid-template-columns: 1fr}
-  #print-app .crop-control {grid-template-columns: minmax(110px,1fr) 40px minmax(80px,1.2fr)}
-  #print-app .crop-control input {grid-column: auto}
+@media(max-width:560px) {
+  #print-app .edit-views {grid-template-columns: minmax(0,1.7fr) minmax(0,1fr); gap: 7px}
+  #print-app .editor-source-stage, #print-app .editor-proof-stage {height: clamp(210px,32dvh,255px); padding: 4px}
+  #print-app .edit-tone-grid {grid-template-columns: 1fr}
+  #print-app .editor-edges {grid-template-columns: repeat(2,minmax(0,1fr))}
+}
+@media(max-width:440px) {
+  #print-app .edit-views:not(.source-expanded) .edit-view-label {min-height: 2.8em}
 }

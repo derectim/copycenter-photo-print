@@ -1,8 +1,9 @@
 import { demoCatalog } from './catalog.js';
 import { makeZip } from './zip.js';
-import { photoPreview, createCropEditor, cropPose, setCropPose } from './photo-editor.js';
-import { layoutPrint, renderPrint } from './print-render.js';
+import { photoPreview, releasePreviews, createCropEditor, cropPose, setCropPose } from './photo-editor.js';
+import { constrainFrameEdits, layoutPrint, renderPrint } from './print-render.js';
 import { readPrintAsset } from './photo-input.js';
+import {connectWorkspace} from './photo-workspace.js';
 import { printOrderText } from './print-order-text.js';
 
 const root = document.getElementById('print-app');
@@ -35,6 +36,7 @@ const id = () => {
 let catalog;
 let catalogVersion;
 let sessid;
+let signedUserId;
 let groups = [];
 let active;
 let centerId;
@@ -43,6 +45,8 @@ let checkoutKey = '';
 let checkoutRequest;
 let draftId;
 let openDialog;
+let workspace;
+const selectedPhotos = new Set();
 let groupPrices = new Map();
 const catalogIndexes = new WeakMap();
 
@@ -151,7 +155,8 @@ function applyLimits(data) {
     if (Number.isSafeInteger(value) && value > 0) limits[key] = Math.min(value, limits[key]);
   }
   const hint = root.querySelector('[data-order-limits]');
-  if (hint) hint.textContent = 'До ' + (limits.maxFileBytes / MiB).toLocaleString('ru-RU') + ' МБ за файл и ' + (limits.maxOrderBytes / 1e9).toLocaleString('ru-RU') + ' ГБ оригиналов на заказ';
+  if (hint) hint.textContent = 'До ' + (limits.maxFileBytes / MiB).toLocaleString('ru-RU') + ' МБ за файл. Общее хранилище — 20 ГБ.'
+    + (limits.maxOrderBytes < MAX_SOURCE_BYTES ? ' На один заказ — до ' + (limits.maxOrderBytes/1e9).toLocaleString('ru-RU') + ' ГБ.' : '');
 }
 function setOptions(select, options, value) {
   select.replaceChildren(...options.map((entry) => new Option(entry.label, entry.id)));
@@ -166,12 +171,18 @@ function changePhoto(photo, values, nextFormat, previousFormat = nextFormat, pre
   const geometryChanged = previousFormat !== nextFormat || previousCatalog !== catalog ||
     (values.fitId !== undefined && values.fitId !== photo.fitId) || (values.frameId !== undefined && values.frameId !== photo.frameId);
   const pose = geometryChanged && photo.crop ? cropPose(photo, previousFormat, previousCatalog) : null;
+  if (values.frameId !== undefined && values.frameId !== photo.frameId && photo.edits?.frame) {
+    photo.edits = {...photo.edits};
+    delete photo.edits.frame;
+  }
   Object.assign(photo, values);
+  constrainFrameEdits(photo,nextFormat,catalog);
   if (pose) setCropPose(photo, nextFormat, catalog, pose);
 }
 function bindOptionFields(container, format, values, onChange, buttonPaper) {
   container.replaceChildren();
   for (const field of fields) {
+    if (!buttonPaper && field.key === 'frameId') continue; // The editor's frame tab owns this selection.
     const group = el('div', 'option-group');
     const choices = validChoices(format, field);
     if (buttonPaper && field.key === 'paperId') {
@@ -242,6 +253,7 @@ function removeGroup(group) {
   const remove = () => {
     groups = groups.filter((item) => item !== group);
     if (active === group) active = groups[0];
+    for (const photo of group.photos) selectedPhotos.delete(photo);
     const remaining = new Set(allPhotos().map((photo) => photo.asset));
     const removed = new Set(group.photos.map((photo) => photo.asset));
     for (const asset of removed) if (!remaining.has(asset)) URL.revokeObjectURL(asset.url);
@@ -281,18 +293,53 @@ function renderPhoto(group, photo) {
   controls.append(iconButton('Редактировать ' + photo.asset.file.name, 'edit', () => editPhotos(group, [photo])),
     iconButton('Удалить ' + photo.asset.file.name, 'trash', () => {
       group.photos = group.photos.filter((item) => item !== photo);
+      selectedPhotos.delete(photo);
       releaseUnused(photo.asset);
       feedback('Удалено: ' + photo.asset.file.name);
       render();
     }));
-  card.append(photoPreview(photo, format, catalog, 'photo-preview'), meta, controls);
+  const choose=el('label','photo-select');
+  const check=el('input');
+  check.type='checkbox';check.checked=selectedPhotos.has(photo);
+  check.setAttribute('aria-label','Выбрать '+photo.asset.file.name);
+  check.addEventListener('change',()=>{check.checked?selectedPhotos.add(photo):selectedPhotos.delete(photo);selectionState();});
+  choose.append(check, document.createTextNode('Выбрать'));
+  card.append(photoPreview(photo, format, catalog, 'photo-preview'), meta, controls, choose);
   return card;
+}
+function selectionState(){
+  const picked=active.photos.filter(p=>selectedPhotos.has(p));
+  $('selection-tools').hidden=!active.photos.length;
+  $('select-all-photos').checked=!!active.photos.length && picked.length===active.photos.length;
+  $('select-all-photos').indeterminate=picked.length>0 && picked.length<active.photos.length;
+  for(const key of ['selection-edit','selection-delete','selection-store'])$(key).disabled=!picked.length;
+}
+function priceBreakdown(){
+  const box=$('format-estimate');box.replaceChildren();
+  const filled=groups.filter(group=>group.photos.length);
+  box.hidden=!filled.length;
+  if(!filled.length)return;
+  box.append(el('h4','','По форматам'));
+  for(const group of filled){
+    const row=el('div','estimate-row');
+    const rates=new Map();
+    for(const photo of group.photos){
+      const price=unitPrice(group,photo);
+      rates.set(price,(rates.get(price)||0)+photo.copies);
+    }
+    const quoted=needsQuote(group);
+    row.append(el('strong','',formatOf(group).label),el('b','',quoted?'По запросу':money(subtotal(group))),
+      el('small','',quoted?countCopies(group)+' шт.':Array.from(rates,([price,n])=>n+' шт. × '+money(price)).join(' + ')));
+    box.append(row);
+  }
 }
 function render() {
   groupPrices = new Map();
   const focusKey = document.activeElement?.dataset.focusKey;
   renderTabs();
   setOptions($('format-select'), catalog.formats, active.formatId);
+  const physical=formatOf(active);
+  $('format-physical').textContent=(physical.width*10).toLocaleString('ru-RU')+' × '+(physical.height*10).toLocaleString('ru-RU')+' мм';
   for (const option of $('format-select').options) option.disabled = groups.some((g) => g !== active && g.formatId === option.value);
   bindOptionFields($('option-fields'), formatOf(active), active.defaults, updateDefaults, true);
   const groupSettings = [active.defaults, ...active.photos];
@@ -309,6 +356,7 @@ function render() {
   const pages = Math.max(1, Math.ceil(active.photos.length / PAGE_SIZE));
   active.page = Math.min(active.page || 0, pages - 1);
   const first = active.page * PAGE_SIZE;
+  releasePreviews($('photos'));
   $('photos').replaceChildren(...active.photos.slice(first, first + PAGE_SIZE).map((photo) => renderPhoto(active, photo)));
   let nav = $('photo-pagination');
   if (!nav) {
@@ -335,6 +383,9 @@ function render() {
   const sizeIssue = orderLimitIssue();
   note.hidden = !quotation && !sizeIssue;
   note.textContent = sizeIssue || (quotation ? 'Для такого тиража ' + formatOf(quotation).label + ' стоимость рассчитает менеджер копицентра.' : '');
+  selectionState();
+  priceBreakdown();
+  workspace?.changed();
   if (focusKey) Array.from(root.querySelectorAll('[data-focus-key]')).find((node) => node.dataset.focusKey === focusKey)?.focus({ preventScroll: true });
 }
 function pageNavigation(nav, length, page, change) {
@@ -380,15 +431,21 @@ function showDialog(title) {
 }
 function editPhotos(group, photos, bulk = false) {
   if (!photos.length || busy) return;
+  const entireFormat = bulk && (photos === group.photos || (photos.length > 1 && photos.length === group.photos.length));
+  bulk = bulk && photos.length > 1;
   const dialog = showDialog(bulk ? 'Редактор группы' : 'Редактор снимка');
   dialog.dialog.classList.add('crop-dialog');
-  const drafts = photos.map((photo) => ({ ...photo, crop: photo.crop ? { ...photo.crop } : null, extraIds: [...(photo.extraIds || [])] }));
+  const drafts = photos.map((photo) => ({ ...photo, crop: photo.crop ? { ...photo.crop } : null,
+    edits: photo.edits ? structuredClone(photo.edits) : null, extraIds: [...(photo.extraIds || [])] }));
   const format = formatOf(group);
   const common = (key) => drafts.every((draft) => draft[key] === drafts[0][key]) ? drafts[0][key] : null;
   const values = Object.fromEntries(fields.map(({ key }) => [key, common(key)]));
   const changedDefaults = {};
   const changedExtras = new Map();
-  const editor = createCropEditor(drafts, format, catalog, bulk);
+  const editor = createCropEditor(drafts, format, catalog, bulk, (frameId) => {
+    changedDefaults.frameId = frameId;
+    for (const draft of drafts) changePhoto(draft, {frameId}, format);
+  });
   const controls = el('div', 'edit-options');
   bindOptionFields(controls, format, values, (key, value) => {
     if (key === 'fitId' || key === 'frameId') editor.flush();
@@ -406,7 +463,11 @@ function editPhotos(group, photos, bulk = false) {
   let copiesEdited = false;
   copies.addEventListener('input', () => { copiesEdited = true; });
   label.append(copies);
-  if (bulk) dialog.content.append(el('p', 'crop-scope', 'Изменения применятся ко всем снимкам формата ' + format.label + '.'));
+  if (bulk) {
+    const scope = entireFormat ? 'Изменения применятся ко всем снимкам формата ' + format.label + '.'
+      : 'Изменения затронут только выделенные фотографии (' + photos.length + ' из ' + group.photos.length + ').';
+    dialog.content.append(el('p', 'crop-scope', scope));
+  }
   const settingsPanel = el('div', 'crop-settings');
   settingsPanel.append(controls, label);
   dialog.content.append(editor.element, settingsPanel);
@@ -417,7 +478,7 @@ function editPhotos(group, photos, bulk = false) {
       if (copies.value) draft.copies = Number(copies.value);
       Object.assign(photos[index], draft);
     });
-    if (bulk) {
+    if (entireFormat) {
       Object.assign(group.defaults, changedDefaults);
       for (const [key, selected] of changedExtras) toggleExtra(group.defaults, key, selected);
       if (copiesEdited && copies.value) group.defaults.copies = Number(copies.value);
@@ -446,7 +507,10 @@ function addFormat() {
     const format = byId('formats', select.value);
     const group = makeGroup(format);
     if (duplicate.checked) group.photos = active.photos.map((source) => {
-      const copy = { asset: source.asset, ...settings(format, source), crop: null };
+      const copy = { asset: source.asset, ...settings(format, source), crop: null,
+        edits: source.edits ? structuredClone(source.edits) : null };
+      if (copy.frameId !== source.frameId && copy.edits) delete copy.edits.frame;
+      constrainFrameEdits(copy,format,catalog);
       if (source.crop) setCropPose(copy, format, catalog, cropPose(source, formatOf(active), catalog));
       return copy;
     });
@@ -527,6 +591,7 @@ async function loadFiles(files) {
     setBusy(false);
     render();
   }
+  if (workspace) await workspace.save();
 }
 async function loadSamples() {
   if (busy || !active) return;
@@ -546,6 +611,9 @@ async function request(action, init = {}) {
   if (endpoint.origin !== location.origin) throw Error('Адрес модуля должен находиться на домене магазина.');
   const url = new URL(endpoint);
   url.searchParams.set('action', action);
+  if (action!=='config' && signedUserId) {
+    init.headers={...init.headers,'X-Photoprint-User':String(signedUserId)};
+  }
   let response;
   try { response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', ...init }); }
   catch { throw Error('Не удалось связаться с магазином. Проверьте соединение и повторите попытку.'); }
@@ -562,7 +630,7 @@ async function request(action, init = {}) {
   return body;
 }
 function renditionKey(group, photo) {
-  return JSON.stringify([photo.asset.assetId, group.formatId, photo.fitId, photo.frameId, photo.crop || null, catalogVersion]);
+  return JSON.stringify([photo.asset.assetId, group.formatId, photo.fitId, photo.frameId, photo.crop || null, photo.edits || null, catalogVersion]);
 }
 async function preparedId(group, photo, requiredKeys) {
   const asset = photo.asset;
@@ -580,6 +648,7 @@ async function preparedId(group, photo, requiredKeys) {
   form.set('fitId', photo.fitId);
   form.set('frameId', photo.frameId);
   form.set('crop', JSON.stringify(photo.crop || null));
+  form.set('edits', JSON.stringify(photo.edits || null));
   form.set('catalogVersion', catalogVersion);
   const replaceKey = Array.from(asset.prints.keys()).find((candidate) => !requiredKeys.has(candidate));
   if (replaceKey) form.set('replacePrintId', asset.prints.get(replaceKey));
@@ -590,6 +659,8 @@ async function preparedId(group, photo, requiredKeys) {
   return data.printId;
 }
 async function goToCheckout(setProgress) {
+  await workspace.save(true);
+  draftId=workspace.draftId;
   const assets = Array.from(new Set(allPhotos().map((photo) => photo.asset)));
   draftId ??= id();
   const rows = groups.flatMap((group) => group.photos.map((photo) => ({ group, photo })));
@@ -622,7 +693,7 @@ async function goToCheckout(setProgress) {
     const printId = await preparedId(group, photo, requiredKeys);
     items.push({
       assetId: photo.asset.assetId, formatId: group.formatId, paperId: photo.paperId, fitId: photo.fitId,
-      frameId: photo.frameId, extraIds: photo.extraIds || [], copies: photo.copies, crop: photo.crop || null, printId
+      frameId: photo.frameId, extraIds: photo.extraIds || [], copies: photo.copies, crop: photo.crop || null, edits:photo.edits || null, printId
     });
   }
   setProgress('Добавляем печать в корзину…');
@@ -630,7 +701,7 @@ async function goToCheckout(setProgress) {
   if (key !== checkoutKey) { checkoutKey = key; checkoutRequest = id(); }
   const data = await request('basket', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessid, draftId, requestId: checkoutRequest, catalogVersion, renderVersion: 1, centerId, items, expectedTotal: groups.reduce((sum, group) => sum + subtotal(group), 0) / 100 })
+    body: JSON.stringify({ sessid, draftId, replaceJobId:workspace.jobId, editorPath:location.pathname, requestId: checkoutRequest, catalogVersion, renderVersion: 1, centerId, items, expectedTotal: groups.reduce((sum, group) => sum + subtotal(group), 0) / 100 })
   });
   if (!data.checkoutUrl) throw Error('Магазин не передал ссылку для оформления.');
   const url = new URL(data.checkoutUrl, location.href);
@@ -643,12 +714,17 @@ function safeFile(name) {
 async function buildDemoOrder(number, setProgress) {
   const center = byId('centers', centerId);
   const entries = [];
+  const originals=new Map();
+  const {demoUsage}=await import('./demo-account.js');
+  const available=await demoUsage();
+  let archiveBytes=0;
   const totalPhotos = allPhotos().length;
   let printBytes = 0;
   const spec = {
     orderNumber: number, centerId: center.id, center: center.label,
     totalCopies: groups.reduce((sum, group) => sum + countCopies(group), 0),
-    total: groups.reduce((sum, group) => sum + subtotal(group), 0) / 100, photos: []
+    total: groups.reduce((sum, group) => sum + subtotal(group), 0) / 100, photos: [],
+    formats:groups.filter(g=>g.photos.length).map(g=>({formatId:g.formatId,label:formatOf(g).label,copies:countCopies(g),total:subtotal(g)/100}))
   };
   for (const group of groups) {
     const format = formatOf(group);
@@ -660,22 +736,27 @@ async function buildDemoOrder(number, setProgress) {
     }
     for (const [code, photos] of printRuns) {
       const quantity = photos.reduce((n, photo) => n + photo.copies, 0);
-      const folder = code + '_' + quantity;
+      const folder = safeFile(center.id) + '_' + code + '_' + quantity;
       for (const [index, photo] of photos.entries()) {
         const basename = safeFile(photo.asset.file.name.replace(/\.[^.]+$/, ''));
         const stem = String(index + 1).padStart(4, '0') + '_' + photo.copies + 'x_' + basename;
-        const originalPath = folder + '/originals/' + stem + '.' + photo.asset.extension;
-        const printPath = folder + '/' + stem + '.jpg';
+        const originalPath = originals.get(photo.asset) || 'originals/' + String(originals.size+1).padStart(4,'0') + '_' + basename + '.' + photo.asset.extension;
+        const printPaths=Array.from({length:photo.copies},(_,i)=>folder+'/'+stem+'_копия_'+String(i+1).padStart(3,'0')+'.jpg');
+        const printPath=printPaths[0];
         setProgress('Готовим отпечаток ' + (spec.photos.length + 1) + ' из ' + totalPhotos + '…');
         const jpeg = await renderPrint(photo, format, catalog);
         printBytes += jpeg.size;
         if (jpeg.size > 20 * MiB || printBytes > MAX_SOURCE_BYTES) {
           throw Error('Готовые отпечатки превышают лимит: 20 МБ на файл и 20 ГБ на заказ.');
         }
+        archiveBytes+=(jpeg.size+128)*photo.copies + (originals.has(photo.asset)?0:photo.asset.file.size+128);
+        if (archiveBytes > available.limit - available.used) throw Error('Для архива со всеми печатными копиями недостаточно места в общем хранилище 20 ГБ.');
         const layout = layoutPrint(photo, format, catalog);
         const digest = crypto.subtle ? new Uint8Array(await crypto.subtle.digest('SHA-256', await jpeg.arrayBuffer())) : null;
         const line = {
           archiveFile: originalPath, originalArchiveFile: originalPath, printArchiveFile: printPath, crop: photo.crop || null,
+          edits: photo.edits || null,
+          cropReference: photo.edits?.angle || photo.edits?.mirrorX || photo.edits?.mirrorY ? 'transformed-original' : 'oriented-original',
           printWidth: layout.width, printHeight: layout.height, printSha256: digest ? Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('') : null,
           originalName: photo.asset.file.name, formatId: format.id, formatLabel: format.label,
           width: format.width, height: format.height, paperId: photo.paperId, paperLabel: byId('papers', photo.paperId).label,
@@ -690,8 +771,10 @@ async function buildDemoOrder(number, setProgress) {
           const key = field.key.replace(/Id$/, 'Surcharge');
           line[key] = surcharge(format, field.list, byId(field.list, photo[field.key])) / 100;
         }
+        line.printArchiveFiles=printPaths;
         spec.photos.push(line);
-        entries.push({ path: originalPath, blob: photo.asset.file }, { path: printPath, blob: jpeg });
+        if(!originals.has(photo.asset)){originals.set(photo.asset,originalPath);entries.push({path:originalPath,blob:photo.asset.file});}
+        for(const path of printPaths)entries.push({path,blob:jpeg});
       }
     }
   }
@@ -736,6 +819,7 @@ async function finishDemoOrder(dialog, message, number) {
 }
 async function review() {
   if (busy || !canCheckout()) return;
+  try{await workspace.save(true);}catch(e){feedback(e.message,'error');return;}
   if (await synchronizeDemo() || openDialog?.open) return;
   const dialog = showDialog('Проверить заказ');
   const list = el('div', 'review-list');
@@ -914,13 +998,13 @@ function bindControls() {
   $('file-input').addEventListener('change', (event) => {
     const files = Array.from(event.target.files);
     event.target.value = '';
-    loadFiles(files);
+    workspace?.gate(()=>loadFiles(files));
   });
   root.addEventListener('click', (event) => {
     const control = event.target.closest('#upload-button, [data-action="upload"], #sample-button, [data-action="sample"]');
     if (!control || busy) return;
-    if (control.matches('#sample-button, [data-action="sample"]')) loadSamples();
-    else $('file-input').click();
+    if (control.matches('#sample-button, [data-action="sample"]')) workspace?.gate(loadSamples);
+    else workspace?.gate(()=>$('file-input').click());
   });
   root.addEventListener('click', (event) => {
     if (busy && !event.target.closest('dialog')) { event.preventDefault(); event.stopImmediatePropagation(); }
@@ -935,7 +1019,7 @@ function bindControls() {
     for (const photo of active.photos) changePhoto(photo, settings(format, photo), format, previousFormat);
     render();
   });
-  $('center-select').addEventListener('change', (event) => { centerId = event.target.value; });
+  $('center-select').addEventListener('change', (event) => { centerId = event.target.value; workspace?.changed(); });
   $('copies-minus').addEventListener('click', () => updateDefaults('copies', Math.max(1, active.defaults.copies - 1)));
   $('copies-plus').addEventListener('click', () => updateDefaults('copies', Math.min(999, active.defaults.copies + 1)));
   const copies = $('copies-input');
@@ -948,7 +1032,31 @@ function bindControls() {
     }
     updateDefaults('copies', Number(copies.value));
   });
-  $('checkout-button').addEventListener('click', review);
+  $('checkout-button').addEventListener('click', ()=>workspace?.gate(review));
+  $('select-all-photos').addEventListener('change',e=>{
+    for(const photo of active.photos)e.target.checked?selectedPhotos.add(photo):selectedPhotos.delete(photo);
+    render();
+  });
+  const picked=()=>active.photos.filter(photo=>selectedPhotos.has(photo));
+  $('selection-edit').onclick=()=>editPhotos(active,picked(),true);
+  $('selection-store').onclick=()=>workspace?.capture(picked());
+  $('selection-delete').onclick=()=>{
+    const remove=picked();
+    if(!remove.length||!confirm('Удалить выбранные фотографии из этого формата?'))return;
+    active.photos=active.photos.filter(p=>!selectedPhotos.has(p));
+    for(const p of remove){selectedPhotos.delete(p);releaseUnused(p.asset);}
+    render();
+  };
+  $('view-mode').onclick=()=>{
+    const list=$('photos').classList.toggle('list-mode');
+    $('view-mode').setAttribute('aria-pressed',String(list));$('view-mode').textContent=list?'Плитка':'Список';
+  };
+  $('view-scale').oninput=e=>$('photos').style.setProperty('--photo-thumb-size',e.target.value+'px');
+  const panel=root.querySelector('.workspace');
+  $('view-fullscreen').onclick=()=>{
+    const full=panel.classList.toggle('is-expanded');$('view-fullscreen').textContent=full?'Свернуть':'Во весь экран';
+  };
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!openDialog&&panel.classList.contains('is-expanded'))$('view-fullscreen').click();});
   const fileDrag = (event) => event.dataTransfer.types.includes('Files');
   root.addEventListener('dragover', (event) => {
     if (!fileDrag(event)) return;
@@ -963,8 +1071,50 @@ function bindControls() {
     if (!fileDrag(event)) return;
     event.preventDefault();
     $('empty-upload').classList.remove('is-dragging');
-    if (!busy && !openDialog) loadFiles(Array.from(event.dataTransfer.files));
+    const files=Array.from(event.dataTransfer.files);
+    if (!busy && !openDialog) workspace?.gate(()=>loadFiles(files));
   });
+}
+function draftSnapshot() {
+  return {centerId,activeFormatId:active.formatId,groups:groups.map(group=>({
+    formatId:group.formatId, defaults:group.defaults,
+    photos:group.photos.map(photo=>({...settings(formatOf(group),photo),assetId:photo.asset.assetId,
+      crop:photo.crop||null,edits:photo.edits||null}))
+  }))};
+}
+function replaceRows(next,chosen,center){
+  const old=new Set(allPhotos().map(p=>p.asset));
+  groups=next;active=groups.find(g=>g.formatId===chosen)||groups[0];
+  centerId=byId('centers',center)?center:catalog.centers[0].id;
+  $('center-select').value=centerId;checkoutKey='';checkoutRequest=null;selectedPhotos.clear();
+  for(const asset of old)URL.revokeObjectURL(asset.url);
+  render();
+}
+function restoreRows(state,assets){
+  const rebuilt=new Map();
+  for(const saved of state.groups){
+    const format=byId('formats',saved.formatId)||catalog.formats[0];
+    const group=rebuilt.get(format.id)||makeGroup(format);
+    group.defaults=settings(format,saved.defaults||{});
+    for(const row of saved.photos){
+      const asset=assets.get(row.assetId);
+      if(!asset)throw Error('Исходник черновика не найден.');
+      const photo={asset,...settings(format,row),crop:row.crop||null,edits:row.edits||null};
+      constrainFrameEdits(photo,format,catalog);
+      group.photos.push(photo);
+    }
+    rebuilt.set(format.id,group);
+  }
+  replaceRows(rebuilt.size?[...rebuilt.values()]:[makeGroup(catalog.formats[0])],state.activeFormatId,state.centerId);
+}
+async function addPhonePhoto(info,file){
+  const existing=allPhotos().find(p=>p.asset.assetId===info.assetId);
+  const format=byId('formats',info.formatId)||catalog.formats[0];
+  let group=groups.find(g=>g.formatId===format.id);
+  if(!group){group=makeGroup(format);groups.push(group);}
+  if(allPhotos().length>=limits.maxItems)throw Error('Лимит фотографий в заказе исчерпан.');
+  const asset=existing?.asset||await readPrintAsset(file);asset.assetId=info.assetId;
+  group.photos.push({asset,...group.defaults});render();
 }
 async function initialize() {
   if (!root) return;
@@ -972,7 +1122,7 @@ async function initialize() {
   $('checkout-button').disabled = true;
   if (endpoint) {
     for (const item of root.querySelectorAll('.demo-only, #sample-button, [data-action="sample"]')) item.hidden = true;
-    for (const item of root.querySelectorAll('[data-privacy]')) item.textContent = 'Оригиналы передаются в защищённое хранилище магазина при оформлении заказа.';
+    for (const item of root.querySelectorAll('[data-privacy]')) item.textContent = 'Оригиналы сохраняются в закрытом хранилище магазина. Черновик доступен 3 дня.';
   }
   try {
     const data = await readCatalog();
@@ -980,11 +1130,16 @@ async function initialize() {
     applyLimits(data.limits);
     catalogVersion = data.catalogVersion;
     sessid = data.sessid;
+    signedUserId = data.auth?.userId;
     active = makeGroup(catalog.formats[0]);
     groups = [active];
     centerId = catalog.centers[0].id;
     setOptions($('center-select'), catalog.centers, centerId);
     bindControls();
+    workspace=await connectWorkspace({root,$,endpoint,sessid:()=>sessid,showDialog,feedback,
+      snapshot:draftSnapshot,restore:restoreRows,reset:()=>replaceRows([makeGroup(catalog.formats[0])],catalog.formats[0].id,catalog.centers[0].id),
+      rows:allPhotos,busy:()=>busy,activeFormat:()=>active.formatId,loadFiles,addRemote:addPhonePhoto,
+      containsAsset:(id,fmt)=>groups.some(g=>g.formatId===(byId('formats',fmt)?.id||catalog.formats[0].id)&&g.photos.some(p=>p.asset.assetId===id))},data);
     if (!endpoint) {
       const checkDemoSettings = () => {
         if (!busy) synchronizeDemo().catch((error) => feedback(error.message, 'error'));

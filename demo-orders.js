@@ -1,49 +1,6 @@
-// This database belongs to this browser and origin. It is never contacted by the Bitrix component.
-const DATABASE = 'copycenter-demo-orders-v1';
+import {vault, sweep, allowBytes} from './demo-vault.js';
+
 export const ORDER_CHANNEL = 'copycenter-demo-orders-updates';
-
-function openDatabase() {
-  return new Promise((resolve, reject) => {
-    if (!globalThis.indexedDB) {
-      reject(new Error('Браузер не разрешил локальное хранение заказов.'));
-      return;
-    }
-    const request = indexedDB.open(DATABASE, 1);
-    request.onupgradeneeded = () => {
-      const database = request.result;
-      database.createObjectStore('orders', {keyPath:'orderNumber'});
-      database.createObjectStore('archives');
-    };
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => {
-      const database = request.result;
-      database.onversionchange = () => database.close();
-      resolve(database);
-    };
-  });
-}
-
-// Keep metadata and potentially large ZIPs in separate stores. Write and delete each pair atomically.
-async function transaction(stores, mode, makeRequests) {
-  const database = await openDatabase();
-  try {
-    return await new Promise((resolve, reject) => {
-      const tx = database.transaction(stores, mode);
-      let result;
-      tx.oncomplete = () => resolve(result);
-      tx.onabort = () => reject(tx.error || new Error('Операция с демозаказом прервана.'));
-      tx.onerror = () => reject(tx.error || new Error('Не удалось сохранить данные демозаказа.'));
-      try {
-        makeRequests(tx, value => { result = value; });
-      } catch (error) {
-        tx.abort();
-        reject(error);
-      }
-    });
-  } finally {
-    database.close();
-  }
-}
 
 function notifyChange() {
   // Focus/visibility refresh also updates an admin tab in browsers without BroadcastChannel.
@@ -72,45 +29,38 @@ export async function saveDemoOrder(spec, blob) {
     createdAt:new Date().toISOString(), filename:filenamePart(spec.centerId) + '_' + filenamePart(orderNumber) + '.zip',
     byteSize:blob.size
   };
-  const result = await transaction(['orders','archives'], 'readwrite', (tx, done) => {
-    const orders = tx.objectStore('orders');
-    const found = orders.get(orderNumber);
-    found.onsuccess = () => {
-      if (found.result) metadata.createdAt = found.result.createdAt;
-      orders.put(metadata);
-      tx.objectStore('archives').put(blob, orderNumber);
-      done(metadata);
-    };
+  const result = await vault('readwrite', async api => {
+    await sweep(api);
+    const existing = await api.get('orders',orderNumber);
+    if (existing) metadata.createdAt = existing.createdAt;
+    await allowBytes(api, blob.size - (existing?.byteSize || 0));
+    await api.put('orders',metadata);
+    await api.put('archives',blob,orderNumber);
+    return metadata;
   });
   notifyChange();
   return result;
 }
 
 export async function listDemoOrders() {
-  const rows = await transaction(['orders'], 'readonly', (tx, done) => {
-    const request = tx.objectStore('orders').getAll();
-    request.onsuccess = () => done(request.result);
-  });
+  const rows = await vault('readwrite', async api => { await sweep(api); return api.all('orders'); });
   return rows.sort((a,b) => b.createdAt.localeCompare(a.createdAt) || b.orderNumber.localeCompare(a.orderNumber));
 }
 
 export async function readDemoOrder(orderNumber) {
-  const data = {};
-  await transaction(['orders','archives'], 'readonly', (tx) => {
-    const metadata = tx.objectStore('orders').get(String(orderNumber));
-    const archive = tx.objectStore('archives').get(String(orderNumber));
-    metadata.onsuccess = () => { data.order = metadata.result; };
-    archive.onsuccess = () => { data.blob = archive.result; };
+  return vault('readwrite', async api => {
+    await sweep(api);
+    const order = await api.get('orders',String(orderNumber));
+    const blob = await api.get('archives',String(orderNumber));
+    if (!order || !(blob instanceof Blob)) throw Error('Срок хранения истёк или демозаказ удалён.');
+    return {order,blob};
   });
-  if (!data.order || !(data.blob instanceof Blob)) throw new Error('Демозаказ уже удалён.');
-  return data;
 }
 
 export async function removeDemoOrder(orderNumber) {
-  await transaction(['orders','archives'], 'readwrite', tx => {
-    tx.objectStore('orders').delete(String(orderNumber));
-    tx.objectStore('archives').delete(String(orderNumber));
+  await vault('readwrite', async api => {
+    await api.del('orders',String(orderNumber));
+    await api.del('archives',String(orderNumber));
   });
   notifyChange();
 }
-

@@ -32,6 +32,7 @@ async function checksum(blob) {
 export async function makeZip(files) {
   const entries = [];
   const directory = [];
+  const checksums = new WeakMap();
   const now = new Date();
   const date = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
   const time = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
@@ -39,7 +40,8 @@ export async function makeZip(files) {
   let directorySize = 0;
   for (const { path, blob } of files) {
     const name = encoder.encode(path);
-    const crc = await checksum(blob);
+    if (!checksums.has(blob)) checksums.set(blob,await checksum(blob));
+    const crc = checksums.get(blob);
     const local = header(30, 0x04034b50);
     const bigFile = blob.size >= MAX32;
     const bigOffset = offset >= MAX32;

@@ -1,0 +1,50 @@
+#print-app .account-tools,#print-app .photo-tools,#print-app .lib-actions,#print-app .lib-albums {
+  display:flex; gap:8px; flex-wrap:wrap; align-items:center;
+}
+#print-app .account-tools {margin-bottom:14px;padding:10px 12px;background:white;border:1px solid var(--line);border-radius:12px}
+#print-app .account-tools button,#print-app .photo-tools button {
+  display:inline-flex;align-items:center;gap:7px;padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:#fafaf6;font-size:14px;font-weight:650;
+}
+#print-app .account-tools button:hover,#print-app .photo-tools button:hover {background:#fff1c8}
+#print-app .account-tools svg {width:17px;height:17px}
+#print-app .profile-button {margin-left:auto}
+#print-app #format-physical {font-size:14px;color:var(--muted)}
+#print-app .draft-status:not(:empty){font-size:14px;color:var(--muted);padding:0 20px 12px}
+#print-app .photo-tools {margin:12px 0 0;padding:10px 0;border-block:1px solid var(--line)}
+#print-app .photo-tools label{display:flex;gap:6px;align-items:center;font-size:14px}
+#print-app .photo-tools input[type=range]{width:80px}
+#print-app .photo-select {display:inline-flex;align-items:center;gap:5px;padding:5px 8px;font-size:14px}
+#print-app .format-estimate {padding:0 0 8px;margin-bottom:4px;border-bottom:1px solid var(--line)}
+#print-app .format-estimate h4 {font-size:16px;margin:0 0 7px;font-style:normal}
+#print-app .estimate-row {display:grid;grid-template-columns:1fr auto;gap:3px 8px;padding:5px 0;font-size:14px}
+#print-app .estimate-row small {grid-column:1/-1;font-size:14px;color:var(--muted)}
+#print-app #photos {grid-template-columns:repeat(auto-fill,minmax(min(var(--photo-thumb-size,185px),100%),1fr))}
+#print-app #photos.list-mode {grid-template-columns:1fr}
+#print-app #photos.list-mode .photo-card {display:grid;grid-template-columns:minmax(90px,25%) minmax(0,1fr);align-items:center}
+#print-app #photos.list-mode .photo-preview {grid-row:1/4}
+#print-app .workspace:fullscreen,#print-app .workspace.is-expanded {background:white;overflow:auto;padding:16px}
+#print-app .workspace.is-expanded {position:fixed;inset:0;z-index:1001}
+#print-app .library-dialog.print-dialog {width:min(820px,calc(100% - 20px))}
+#print-app .library-dialog .dialog-body {display:flex;flex-direction:column;max-height:89dvh}
+#print-app .library-dialog .dialog-content {overflow:auto;min-height:0}
+#print-app .library-toolbar {display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+#print-app .lib-field {display:grid;gap:5px;font-size:14px;font-weight:650;min-width:0}
+#print-app .lib-field input {min-width:0;width:100%;border-radius:7px;border:1px solid var(--line);padding:9px 10px}
+#print-app .lib-albums .lib-field {flex:1;min-width:140px}
+#print-app .lib-albums {align-items:end}
+#print-app .lib-actions {font-size:14px}
+#print-app .lib-actions select {width:auto;max-width:100%}
+#print-app .library-grid {display:grid;grid-template-columns:repeat(auto-fill,minmax(min(135px,100%),1fr));gap:10px}
+#print-app .lib-photo {position:relative;display:grid;gap:4px;align-content:start;border:1px solid var(--line);border-radius:8px;padding:7px;min-width:0;cursor:pointer}
+#print-app .lib-photo:has(:checked) {border-color:#bd8507;background:var(--tint)}
+#print-app .lib-photo img {width:100%;height:110px;object-fit:contain;background:#eceee6;border-radius:4px}
+#print-app .lib-photo input {position:absolute;left:10px;top:10px;width:18px;height:18px}
+#print-app .lib-photo span,#print-app .lib-photo small {font-size:14px;overflow-wrap:anywhere}
+#print-app .lib-group {grid-column:1/-1}
+#print-app .lib-status,#print-app .qr-note {font-size:14px;margin:0}
+#print-app .qr-code {width:min(230px,100%);height:auto;image-rendering:pixelated;justify-self:center}
+#print-app .qr-link {color:inherit;text-decoration:underline;text-underline-offset:3px}
+#print-app #phone-screen {background:white;border:1px solid var(--line);border-radius:14px;padding:20px;display:grid;gap:14px}
+#print-app .draft-row {display:grid;gap:5px;border-bottom:1px solid var(--line);padding:8px 0}
+#print-app .draft-row p {margin:0;font-size:14px;color:var(--muted)}
+@media(max-width:650px){#print-app .library-toolbar {grid-template-columns:1fr 1fr}#print-app .library-toolbar label:first-child {grid-column:1/-1}#print-app .profile-button{margin-left:0}#print-app .lib-actions .button,#print-app .lib-albums .button{padding:8px 10px}}
