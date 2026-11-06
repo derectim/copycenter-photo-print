@@ -46,7 +46,7 @@
     <section id="print-app" aria-labelledby="constructor-title">
       <div class="section-top">
         <h2 id="constructor-title">Конструктор печати</h2>
-        <details class="how"><summary><i data-icon="help"></i> Как заказать</summary><div><strong>Как оформить заказ</strong><ol><li>Добавьте фото и задайте параметры печати.</li><li>Проверьте количество копий и выберите копицентр.</li><li>Перейдите к оформлению заказа.</li></ol><p class="demo-only">В демонстрации можно скачать пробный архив. Оплата отключена.</p></div></details>
+        <details class="how"><summary><i data-icon="help"></i> Как заказать</summary><div><strong>Как оформить заказ</strong><ol><li>Добавьте фото и выберите формат печати.</li><li>Обрежьте отдельный кадр или отредактируйте снимки формата вместе. Для 10 × 10 доступны рамки «Полароид».</li><li>Проверьте тираж, выберите копицентр и перейдите к оформлению.</li></ol><p class="demo-only">В демонстрации можно скачать пробный архив. Оплата отключена.</p></div></details>
       </div>
       <div class="work-grid">
         <div class="work-left">
@@ -57,15 +57,17 @@
             </div>
             <div class="formats-bar"><div id="format-tabs" aria-label="Группы фотографий"></div><button type="button" id="add-format" class="add-tab"><i data-icon="plus"></i> Добавить формат</button></div>
             <div class="photo-body">
-              <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp" multiple hidden>
+              <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" multiple hidden>
               <div id="empty-upload" class="dropzone">
                 <div class="drop-symbol" aria-hidden="true"><span></span><i data-icon="image"></i><b>+</b></div>
                 <strong>Перетащите фотографии сюда</strong>
-                <span class="drop-hint">JPG, PNG или WebP · до 20 МБ за файл</span>
+                <span class="drop-hint">JPG, PNG, WebP, HEIC и HEIF</span>
+                <span class="drop-hint" data-order-limits>До 20 МБ за файл и 20 ГБ оригиналов на заказ</span>
                 <button type="button" class="button primary" id="upload-button" data-action="upload"><i data-icon="upload"></i> Выбрать файлы</button>
               </div>
               <div id="photos" aria-label="Загруженные фотографии"></div>
               <button id="more-files" type="button" data-action="upload" class="button secondary"><i data-icon="plus"></i> Добавить ещё фото</button>
+              <button id="bulk-edit" type="button" class="button secondary" hidden><i data-icon="edit"></i> Редактировать все фото</button>
               <div id="feedback" role="status" aria-live="polite"></div>
             </div>
             <div class="privacy"><i data-icon="shield"></i><span data-privacy>В демо ваши фотографии остаются в браузере.</span></div>

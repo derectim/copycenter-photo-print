@@ -1,4 +1,5 @@
 @import url("./extras.css");
+@import url("./photo-editor.css");
 
 @font-face {
   font-family: PrintManrope;
@@ -677,7 +678,8 @@
   margin-top: 8px;
 }
 
-:where(.photo-demo, #print-app) #more-files {
+:where(.photo-demo, #print-app) #more-files,
+#print-app #bulk-edit {
   margin-top: 15px;
 }
 

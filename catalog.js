@@ -1,5 +1,15 @@
 // Public demonstration rates. The installed module reads the shop's own catalog.
 const tiers = (prices) => prices.map((price, i) => ({ min: [1, 51, 101, 501][i], price }));
+export const instantFrames = [
+  {id: 'polaroid', label: 'Полароид · белая', preview: 'polaroid', surcharge: 0},
+  {id: 'polaroid-cream', label: 'Полароид · кремовая', preview: 'polaroid-cream', surcharge: 0},
+  {id: 'polaroid-black', label: 'Полароид · чёрная', preview: 'polaroid-black', surcharge: 0}
+];
+export const frameStyles = {
+  none: 'Без рамки',
+  white: 'Белая рамка',
+  ...Object.fromEntries(instantFrames.map(frame => [frame.preview, frame.label]))
+};
 const format = (id, width, height, prices) => ({
   id, label: width + ' × ' + height + ' см', width, height,
   tiers: tiers(prices),
@@ -7,9 +17,10 @@ const format = (id, width, height, prices) => ({
 });
 
 export const demoCatalog = {
+  frameEdition: 1,
   formats: [
     format('10x15', 10, 15, [30, 20, 17.5, 15]),
-    format('10x10', 10, 10, [30, 20, 17.5, 15]),
+    {...format('10x10', 10, 10, [30, 20, 17.5, 15]), frameIds: ['none', 'white', ...instantFrames.map(frame => frame.id)]},
     { ...format('15x20', 15, 20, [60, 55, 50]), quoteLimit: 500 },
     { ...format('20x30', 20, 30, [200]), quoteLimit: 50 },
     { ...format('30x40', 30, 40, [400]), quoteLimit: 50 }
@@ -24,7 +35,8 @@ export const demoCatalog = {
   ],
   frames: [
     { id: 'none', label: 'Без рамки', surcharge: 0 },
-    { id: 'white', label: 'Белая рамка', surcharge: 0 }
+    { id: 'white', label: 'Белая рамка', surcharge: 0 },
+    ...instantFrames
   ],
   extras: [
     { id: 'color', label: 'Цветокоррекция', surcharge: 5 },

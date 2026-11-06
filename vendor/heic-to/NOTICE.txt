@@ -1,0 +1,12 @@
+heic-to 1.6.7 is a separate, unmodified, dynamically loaded HEIC decoder.
+It includes libheif 1.23.7 and decoder code from libde265. It is used only when
+the browser cannot read the customer's HEIC/HEIF image natively.
+
+Package: https://registry.npmjs.org/heic-to/-/heic-to-1.6.7.tgz
+Corresponding source and build instructions:
+https://github.com/hoppergee/heic-to/tree/v1.6.7
+https://github.com/strukturag/libheif/tree/v1.23.7
+https://github.com/strukturag/libde265
+
+The package LICENSE is included alongside this file. The decoder may be
+replaced with a compatible build which exports the heicTo function.

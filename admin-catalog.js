@@ -1,4 +1,4 @@
-import { demoCatalog } from './catalog.js';
+import { demoCatalog, frameStyles, instantFrames } from './catalog.js';
 
 export const DEMO_CATALOG_KEY = 'copycenter-demo-catalog-v1';
 export const assignment = {papers: 'paperIds', fits: 'fitIds', frames: 'frameIds', extras: 'extraIds'};
@@ -32,7 +32,7 @@ export function validateDemoCatalog(catalog) {
         throw new Error('Доплата за отпечаток должна быть от 0 до 100 000 ₽ с точностью до копеек.');
       }
       if (key === 'fits' || key === 'frames') {
-        const choices = key === 'fits' ? ['cover','contain'] : ['none','white'];
+        const choices = key === 'fits' ? ['cover','contain'] : Object.keys(frameStyles);
         if (!choices.includes(row.preview || row.id)) throw new Error('Выберите вариант отображения опции.');
       }
     }
@@ -79,6 +79,19 @@ export function readDemoCatalog() {
       if (plainObject(catalog) && !Object.hasOwn(catalog, 'extras')) catalog.extras = [];
       for (const format of catalog.formats) {
         if (!Object.hasOwn(format, 'extraIds')) format.extraIds = [];
+      }
+      // Add newly released presets to existing demo catalogs without changing an
+      // administrator's custom frames, labels or rates. Saved removals stay removed.
+      if (!catalog.frameEdition) {
+        for (const frame of instantFrames) {
+          const conflict = catalog.frames.some(old => old.id.toLowerCase() === frame.id);
+          if (conflict || catalog.frames.length >= 100) continue;
+          catalog.frames.push({...frame});
+          for (const format of catalog.formats) {
+            if (format.width === 10 && format.height === 10) format.frameIds.push(frame.id);
+          }
+        }
+        catalog.frameEdition = 1;
       }
       return validateDemoCatalog(catalog);
     }

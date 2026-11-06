@@ -1,22 +1,27 @@
-import { demoCatalog } from './catalog.js';
+import { demoCatalog, frameStyles } from './catalog.js';
 import { assignment, sectionLabels, DEMO_CATALOG_KEY, readDemoCatalog, saveDemoCatalog } from './admin-catalog.js';
+import { ORDER_CHANNEL, listDemoOrders, readDemoOrder, removeDemoOrder } from './demo-orders.js';
 
 const $ = selector => document.querySelector(selector);
 const dialog = $('#admin-dialog');
 const fields = $('#edit-fields');
 const rub = value => new Intl.NumberFormat('ru-RU', {maximumFractionDigits:2}).format(value) + ' ₽';
 const clone = value => structuredClone(value);
-const titles = {formats:'Форматы печати', options:'Опции печати', centers:'Пункты выдачи'};
+const titles = {formats:'Форматы печати', options:'Опции печати', centers:'Пункты выдачи', orders:'Заказы'};
 const addLabels = {formats:'Добавить формат',options:'Добавить опцию',centers:'Добавить пункт'};
 const descriptions = {
   formats:'Размер отпечатка, доступные опции и цена за тираж.',
   options:'Общие доплаты за отпечаток. Для отдельных форматов можно задать свою цену.',
-  centers:'Эти пункты доступны при оформлении демонстрационного заказа.'
+  centers:'Эти пункты доступны при оформлении демонстрационного заказа.',
+  orders:'Здесь хранятся демозаказы, созданные в этом браузере. В каждом ZIP есть готовые отпечатки, оригиналы и файл «Заказ.txt».'
 };
 let catalog = readDemoCatalog();
-let page = 'formats';
+let page = location.hash === '#orders' ? 'orders' : 'formats';
 let optionSection = 'papers';
 let session = null;
+let orders = [];
+let orderRead = 0;
+let orderState = 'loading';
 
 function node(tag, text, className) {
   const result = document.createElement(tag);
@@ -32,19 +37,90 @@ function button(text, className, handler) {
 }
 function activeKey() { return page === 'options' ? optionSection : page; }
 
+async function reloadOrders() {
+  const request = ++orderRead;
+  try {
+    const result = await listDemoOrders();
+    if (request !== orderRead) return;
+    orders = result;
+    orderState = 'ready';
+  } catch {
+    if (request !== orderRead) return;
+    orderState = 'error';
+  }
+  render();
+}
+
+async function downloadDemo(order) {
+  try {
+    const {blob} = await readDemoOrder(order.orderNumber);
+    const url = URL.createObjectURL(blob);
+    const link = node('a');
+    link.href = url;
+    link.download = order.filename;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (error) {
+    $('#admin-status').textContent = error.message || 'Не удалось открыть архив.';
+    reloadOrders();
+  }
+}
+
+function renderOrders(entries) {
+  if (orderState !== 'ready' || orders.length === 0) {
+    const text = orderState === 'error' ? 'Браузер не разрешил открыть локальную историю заказов.'
+      : orderState === 'loading' ? 'Загружаем заказы…' : 'Демозаказов пока нет.';
+    const block = node('div',null,'empty-entries');
+    block.append(node('p',text));
+    if (orderState === 'ready') {
+      const link = node('a','Перейти в конструктор','adm-btn secondary');
+      link.href = './#print-app'; block.append(link);
+    }
+    entries.append(block);
+    return;
+  }
+  const header = node('div',null,'adm-rowhead');
+  for (const label of ['Демозаказ','Копицентр и тираж','Архив']) header.append(node('span',label));
+  entries.append(header);
+  for (const order of orders) {
+    const row = node('div',null,'adm-row');
+    const identity = node('div');
+    identity.append(node('strong','№ ' + order.orderNumber),node('span',new Date(order.createdAt).toLocaleString('ru-RU'),'adm-code'));
+    const details = node('div');
+    details.append(node('strong',order.centerLabel),node('span',order.totalCopies+' отп. · '+rub(order.total),'adm-code'));
+    const actions = node('div',null,'adm-actions');
+    const save = button('Скачать ZIP','adm-btn secondary',()=>downloadDemo(order));
+    const remove = button('×','adm-icon',()=>openEditor('remove-order',order));
+    remove.setAttribute('aria-label','Удалить заказ ' + order.orderNumber);
+    actions.append(save,remove);
+    row.append(identity,details,actions);
+    entries.append(row);
+  }
+}
+
 function render() {
   const nav = $('#admin-nav');
   nav.replaceChildren();
   for (const [key, label] of Object.entries(titles)) {
-    const control = button(label, '', () => { page = key; $('#admin-status').textContent = ''; render(); });
+    const control = button(label, '', () => {
+      page = key;
+      history.replaceState(null,'',key === 'orders' ? '#orders' : location.pathname + location.search);
+      $('#admin-status').textContent = '';
+      render();
+      if (key === 'orders') reloadOrders();
+    });
     if (page === key) control.setAttribute('aria-current', 'page');
-    const count = key === 'options' ? Object.keys(assignment).reduce((sum, section) => sum + catalog[section].length, 0) : catalog[key].length;
+    const count = key === 'orders' ? (orderState === 'ready' ? orders.length : '…') :
+      key === 'options' ? Object.keys(assignment).reduce((sum, section) => sum + catalog[section].length, 0) : catalog[key].length;
     control.append(node('span', String(count), 'nav-count'));
     nav.append(control);
   }
   $('#list-title').textContent = titles[page];
   $('#list-desc').textContent = descriptions[page];
-  $('#add-entry').textContent = '+ ' + addLabels[page];
+  $('#add-entry').hidden = page === 'orders';
+  if (page !== 'orders') $('#add-entry').textContent = '+ ' + addLabels[page];
   const categories = $('#category-picker');
   categories.replaceChildren();
   if (page === 'options') {
@@ -56,6 +132,7 @@ function render() {
   }
   const entries = $('#entries');
   entries.replaceChildren();
+  if (page === 'orders') { renderOrders(entries); return; }
   const header = node('div', null, 'adm-rowhead');
   [page === 'formats' ? 'Формат' : 'Название', page === 'formats' ? 'Цена за отпечаток' : (page === 'options' ? 'Общая доплата' : 'Код филиала'), 'Действия'].forEach(label => header.append(node('span',label)));
   entries.append(header);
@@ -88,7 +165,8 @@ function initialItem(key) {
   if (key === 'formats') return {
     id:'', label:'', width:10, height:15, tiers:[{min:1,price:30}],
     paperIds:catalog.papers.map(item=>item.id), fitIds:catalog.fits.map(item=>item.id),
-    frameIds:catalog.frames.map(item=>item.id), extraIds:[], surcharges:{}
+    frameIds:catalog.frames.filter(frame => !(frame.preview || frame.id).startsWith('polaroid')).map(frame => frame.id),
+    extraIds:[], surcharges:{}
   };
   if (key === 'centers') return {id:'',label:''};
   return {id:'',label:'',surcharge:0, ...(key === 'frames' ? {preview:'none'} : (key === 'fits' ? {preview:'cover'} : {}))};
@@ -157,6 +235,10 @@ function optionFields(format, key) {
 function populateForm() {
   fields.replaceChildren();
   const item = session.item;
+  if (session.action === 'remove-order') {
+    fields.append(node('p','Удалить демозаказ № '+item.orderNumber+' вместе с его ZIP из этого браузера?'));
+    return;
+  }
   if (session.action === 'delete') {
     fields.append(node('p','Удалить «' + item.label + '» из демонстрационного каталога?'));
     return;
@@ -199,7 +281,7 @@ function populateForm() {
     if (session.key === 'fits' || session.key === 'frames') {
       const wrapper = node('label','Вид предпросмотра','edit-field');
       const select = node('select');
-      const variants = session.key === 'fits' ? {cover:'Заполнить отпечаток',contain:'Показать весь кадр'} : {none:'Без рамки',white:'Белая рамка'};
+      const variants = session.key === 'fits' ? {cover:'Заполнить отпечаток',contain:'Показать весь кадр'} : frameStyles;
       Object.entries(variants).forEach(([id,label])=>select.add(new Option(label,id)));
       item.preview ??= Object.hasOwn(variants,item.id) ? item.id : select.value;
       select.value = item.preview;
@@ -212,9 +294,9 @@ function populateForm() {
 function openEditor(action, existing) {
   const key = activeKey();
   session = {action,key,originalId:existing?.id,item:existing ? clone(existing) : initialItem(key),source:JSON.stringify(catalog)};
-  const title = {new:addLabels[page], edit:'Изменить ' + (page==='formats'?'формат':page==='options'?'опцию':'пункт'), delete:'Удалить запись',reset:'Восстановить демоданные'};
+  const title = {new:addLabels[page], edit:'Изменить ' + (page==='formats'?'формат':page==='options'?'опцию':'пункт'), delete:'Удалить запись',reset:'Восстановить демоданные', 'remove-order':'Удалить демозаказ'};
   $('#dialog-title').textContent = title[action];
-  $('#save-entry').textContent = action === 'delete' ? 'Удалить' : (action==='reset' ? 'Восстановить' : 'Сохранить');
+  $('#save-entry').textContent = ['delete','remove-order'].includes(action) ? 'Удалить' : (action==='reset' ? 'Восстановить' : 'Сохранить');
   $('#edit-error').textContent = '';
   populateForm();
   dialog.showModal();
@@ -246,9 +328,17 @@ function applyChange(next) {
   return next;
 }
 
-$('#entry-form').addEventListener('submit', event => {
+$('#entry-form').addEventListener('submit', async event => {
   event.preventDefault();
   try {
+    if (session.action === 'remove-order') {
+      $('#save-entry').disabled = true;
+      await removeDemoOrder(session.item.orderNumber);
+      dialog.close();
+      await reloadOrders();
+      $('#admin-status').textContent = 'Демозаказ и его архив удалены.';
+      return;
+    }
     if (JSON.stringify(readDemoCatalog()) !== session.source) throw new Error('Каталог изменился в другой вкладке. Закройте форму и откройте её снова.');
     const next = applyChange(clone(catalog));
     if (session.action === 'reset') window.localStorage.removeItem(DEMO_CATALOG_KEY);
@@ -259,6 +349,8 @@ $('#entry-form').addEventListener('submit', event => {
     $('#admin-status').textContent = session.action === 'reset' ? 'Исходные демоданные восстановлены.' : 'Каталог сохранён. Изменения доступны в конструкторе.';
   } catch (error) {
     $('#edit-error').textContent = error instanceof DOMException ? 'Браузер не разрешил сохранить каталог. Проверьте настройки хранилища.' : error.message;
+  } finally {
+    $('#save-entry').disabled = false;
   }
 });
 $('#add-entry').addEventListener('click',()=>openEditor('new'));
@@ -271,5 +363,15 @@ window.addEventListener('storage', event => {
   render();
   $('#admin-status').textContent = 'Показаны настройки, сохранённые в другой вкладке.';
 });
+window.addEventListener('hashchange', () => { page = location.hash === '#orders' ? 'orders' : 'formats'; render(); if (page === 'orders') reloadOrders(); });
+window.addEventListener('focus', reloadOrders);
+if (typeof BroadcastChannel === 'function') {
+  try {
+    const channel = new BroadcastChannel(ORDER_CHANNEL);
+    channel.onmessage = reloadOrders;
+    window.addEventListener('pagehide', () => channel.close(), {once:true});
+  } catch { /* The list also refreshes on focus. */ }
+}
 render();
+reloadOrders();
 

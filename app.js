@@ -1,5 +1,9 @@
 import { demoCatalog } from './catalog.js';
 import { makeZip } from './zip.js';
+import { photoPreview, createCropEditor, cropPose, setCropPose } from './photo-editor.js';
+import { layoutPrint, renderPrint } from './print-render.js';
+import { readPrintAsset } from './photo-input.js';
+import { printOrderText } from './print-order-text.js';
 
 const root = document.getElementById('print-app');
 const $ = (id) => root.querySelector('#' + id);
@@ -17,6 +21,11 @@ const samples = [
 ];
 const priceFormat = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 2, minimumFractionDigits: 0 });
 const money = (kopecks) => priceFormat.format(kopecks / 100);
+const MAX_ITEMS = 5000;
+const MAX_SOURCE_BYTES = 20_000_000_000;
+const PAGE_SIZE = 36;
+const defaultLimits = { maxOrderBytes: MAX_SOURCE_BYTES, maxFileBytes: 20 * 1024 * 1024, maxItems: MAX_ITEMS };
+let limits = { ...defaultLimits };
 const id = () => {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   bytes[6] = (bytes[6] & 15) | 64;
@@ -32,7 +41,10 @@ let centerId;
 let busy = false;
 let checkoutKey = '';
 let checkoutRequest;
+let draftId;
 let openDialog;
+let groupPrices = new Map();
+const catalogIndexes = new WeakMap();
 
 function el(tag, className, text) {
   const element = document.createElement(tag);
@@ -58,7 +70,12 @@ function feedback(message, tone = 'info') {
   $('feedback').textContent = message;
   $('feedback').dataset.tone = tone;
 }
-function byId(list, key) { return catalog[list]?.find((entry) => entry.id === key); }
+function byId(list, key) {
+  const entries = catalog[list];
+  if (!entries) return undefined;
+  if (!catalogIndexes.has(entries)) catalogIndexes.set(entries, new Map(entries.map((entry) => [entry.id, entry])));
+  return catalogIndexes.get(entries).get(key);
+}
 function formatOf(group) { return byId('formats', group.formatId); }
 function validChoices(format, field) {
   return format[field.allowed].map((key) => byId(field.list, key)).filter(Boolean);
@@ -76,7 +93,6 @@ function settings(format, existing = {}) {
 function makeGroup(format) {
   return { formatId: format.id, defaults: settings(format), photos: [] };
 }
-function countCopies(group) { return group.photos.reduce((sum, photo) => sum + photo.copies, 0); }
 function surcharge(format, list, choice) {
   return Math.round(Number(format.surcharges?.[list]?.[choice.id] ?? choice.surcharge ?? 0) * 100);
 }
@@ -84,34 +100,74 @@ function choiceLabel(format, list, choice) {
   const cost = surcharge(format, list, choice);
   return cost ? choice.label + ' (+' + money(cost) + ')' : choice.label;
 }
-function unitPrice(group, photo) {
+function pricesOf(group) {
+  if (groupPrices.has(group)) return groupPrices.get(group);
   const format = formatOf(group);
-  const qty = Math.max(1, countCopies(group));
-  const tiers = format.tiers.filter((tier) => tier.min <= qty);
+  const count = group.photos.reduce((sum, photo) => sum + photo.copies, 0);
+  const tiers = format.tiers.filter((tier) => tier.min <= Math.max(count, 1));
   const tier = tiers.reduce((highest, current) => current.min > highest.min ? current : highest);
-  const options = fields.reduce((sum, field) => sum + surcharge(format, field.list, byId(field.list, photo[field.key])), 0);
-  const extras = (photo.extraIds || []).reduce((sum, key) => sum + surcharge(format, 'extras', byId('extras', key)), 0);
-  return Math.round(tier.price * 100) + options + extras;
+  const unit = (photo) => {
+    const options = fields.reduce((sum, field) => sum + surcharge(format, field.list, byId(field.list, photo[field.key])), 0);
+    const extras = (photo.extraIds || []).reduce((sum, key) => sum + surcharge(format, 'extras', byId('extras', key)), 0);
+    return Math.round(tier.price * 100) + options + extras;
+  };
+  let total = 0;
+  const units = new Map([[group.defaults, unit(group.defaults)]]);
+  for (const photo of group.photos) {
+    const price = unit(photo);
+    units.set(photo, price);
+    total += price * photo.copies;
+  }
+  const prices = { count, total, units };
+  groupPrices.set(group, prices);
+  return prices;
 }
-function subtotal(group) {
-  return group.photos.reduce((sum, photo) => sum + unitPrice(group, photo) * photo.copies, 0);
-}
+const countCopies = (group) => pricesOf(group).count;
+const subtotal = (group) => pricesOf(group).total;
+const unitPrice = (group, photo) => pricesOf(group).units.get(photo);
 function needsQuote(group) {
   const limit = formatOf(group).quoteLimit;
   return limit && countCopies(group) > limit;
 }
 function canCheckout() {
-  return allPhotos().length > 0 && !groups.some(needsQuote);
+  return allPhotos().length > 0 && !groups.some(needsQuote) && !orderLimitIssue();
 }
 function allPhotos() { return groups.flatMap((group) => group.photos); }
+function orderLimitIssue() {
+  const rows = allPhotos();
+  if (rows.length > limits.maxItems) return 'В заказе может быть до ' + limits.maxItems.toLocaleString('ru-RU') + ' снимков.';
+  const unique = new Set(rows.map((row) => row.asset));
+  let size = 0;
+  for (const asset of unique) {
+    if (asset.file.size > limits.maxFileBytes) return 'Размер файла «' + asset.file.name + '» превышает текущий лимит магазина.';
+    size += asset.file.size;
+  }
+  return size > limits.maxOrderBytes ? 'Суммарный размер оригиналов превышает ' + limits.maxOrderBytes / 1e9 + ' ГБ.' : '';
+}
+function applyLimits(data) {
+  limits = { ...defaultLimits };
+  for (const key of Object.keys(limits)) {
+    const value = data?.[key];
+    if (Number.isSafeInteger(value) && value > 0) limits[key] = Math.min(value, limits[key]);
+  }
+  const hint = root.querySelector('[data-order-limits]');
+  if (hint) hint.textContent = 'До ' + (limits.maxFileBytes / MiB).toLocaleString('ru-RU') + ' МБ за файл и ' + (limits.maxOrderBytes / 1e9).toLocaleString('ru-RU') + ' ГБ оригиналов на заказ';
+}
 function setOptions(select, options, value) {
   select.replaceChildren(...options.map((entry) => new Option(entry.label, entry.id)));
   select.value = value;
 }
 function updateDefaults(key, value) {
   active.defaults[key] = value;
-  for (const photo of active.photos) photo[key] = value;
+  for (const photo of active.photos) changePhoto(photo, { [key]: value }, formatOf(active));
   render();
+}
+function changePhoto(photo, values, nextFormat, previousFormat = nextFormat, previousCatalog = catalog) {
+  const geometryChanged = previousFormat !== nextFormat || previousCatalog !== catalog ||
+    (values.fitId !== undefined && values.fitId !== photo.fitId) || (values.frameId !== undefined && values.frameId !== photo.frameId);
+  const pose = geometryChanged && photo.crop ? cropPose(photo, previousFormat, previousCatalog) : null;
+  Object.assign(photo, values);
+  if (pose) setCropPose(photo, nextFormat, catalog, pose);
 }
 function bindOptionFields(container, format, values, onChange, buttonPaper) {
   container.replaceChildren();
@@ -136,6 +192,12 @@ function bindOptionFields(container, format, values, onChange, buttonPaper) {
       label.htmlFor = select.id = (buttonPaper ? 'print-' : 'edit-') + field.key;
       select.dataset.focusKey = field.key;
       setOptions(select, choices.map((choice) => ({ id: choice.id, label: choiceLabel(format, field.list, choice) })), values[field.key]);
+      if (values[field.key] === null) {
+        const placeholder = new Option('Разные значения', '', true, true);
+        placeholder.disabled = true;
+        select.prepend(placeholder);
+        select.value = '';
+      }
       select.addEventListener('change', () => onChange(field.key, select.value));
       group.append(label, select);
     }
@@ -173,29 +235,6 @@ function bindExtras(container, format, settingsList, changed, groupMode) {
   container.append(fieldset);
 }
 
-function preview(photo, format, css) {
-  const frame = el('div', css);
-  const picture = el('div', 'print-sheet');
-  const formatRatio = format.width / format.height;
-  const landscape = photo.asset.width >= photo.asset.height;
-  const ratio = landscape ? Math.max(formatRatio, 1 / formatRatio) : Math.min(formatRatio, 1 / formatRatio);
-  picture.style.aspectRatio = String(ratio);
-  picture.style.width = 'min(100cqw, ' + (100 * ratio) + 'cqh)';
-  picture.style.height = 'min(100cqh, ' + (100 / ratio) + 'cqw)';
-  const frameStyle = byId('frames', photo.frameId).preview || photo.frameId;
-  const fitStyle = byId('fits', photo.fitId).preview || photo.fitId;
-  picture.dataset.frame = frameStyle;
-  picture.style.background = 'white';
-  picture.style.padding = frameStyle === 'white' ? '4%' : '0';
-  const img = el('img');
-  img.src = photo.asset.url;
-  img.alt = photo.asset.file.name;
-  img.style.cssText = 'width:100%;height:100%;display:block;';
-  img.style.objectFit = fitStyle === 'contain' ? 'contain' : 'cover';
-  picture.append(img);
-  frame.append(picture);
-  return frame;
-}
 function releaseUnused(asset) {
   if (!allPhotos().some((photo) => photo.asset === asset)) URL.revokeObjectURL(asset.url);
 }
@@ -203,7 +242,9 @@ function removeGroup(group) {
   const remove = () => {
     groups = groups.filter((item) => item !== group);
     if (active === group) active = groups[0];
-    group.photos.forEach((photo) => releaseUnused(photo.asset));
+    const remaining = new Set(allPhotos().map((photo) => photo.asset));
+    const removed = new Set(group.photos.map((photo) => photo.asset));
+    for (const asset of removed) if (!remaining.has(asset)) URL.revokeObjectURL(asset.url);
     render();
   };
   if (!group.photos.length) { remove(); return; }
@@ -237,17 +278,18 @@ function renderPhoto(group, photo) {
   const details = el('div', 'photo-details', [photo.copies + ' шт.', byId('papers', photo.paperId).label, ...extraNames].join(' · '));
   meta.append(name, details);
   const controls = el('div', 'photo-actions');
-  controls.append(iconButton('Настроить ' + photo.asset.file.name, 'edit', () => editPhoto(group, photo)),
+  controls.append(iconButton('Редактировать ' + photo.asset.file.name, 'edit', () => editPhotos(group, [photo])),
     iconButton('Удалить ' + photo.asset.file.name, 'trash', () => {
       group.photos = group.photos.filter((item) => item !== photo);
       releaseUnused(photo.asset);
       feedback('Удалено: ' + photo.asset.file.name);
       render();
     }));
-  card.append(preview(photo, format, 'photo-preview'), meta, controls);
+  card.append(photoPreview(photo, format, catalog, 'photo-preview'), meta, controls);
   return card;
 }
 function render() {
+  groupPrices = new Map();
   const focusKey = document.activeElement?.dataset.focusKey;
   renderTabs();
   setOptions($('format-select'), catalog.formats, active.formatId);
@@ -263,7 +305,18 @@ function render() {
   $('copies-plus').disabled = busy || active.defaults.copies >= 999;
   $('empty-upload').hidden = active.photos.length > 0;
   if ($('more-files')) $('more-files').hidden = active.photos.length === 0;
-  $('photos').replaceChildren(...active.photos.map((photo) => renderPhoto(active, photo)));
+  if ($('bulk-edit')) $('bulk-edit').hidden = active.photos.length === 0;
+  const pages = Math.max(1, Math.ceil(active.photos.length / PAGE_SIZE));
+  active.page = Math.min(active.page || 0, pages - 1);
+  const first = active.page * PAGE_SIZE;
+  $('photos').replaceChildren(...active.photos.slice(first, first + PAGE_SIZE).map((photo) => renderPhoto(active, photo)));
+  let nav = $('photo-pagination');
+  if (!nav) {
+    nav = el('nav', 'photo-pagination');
+    nav.id = 'photo-pagination';
+    $('photos').after(nav);
+  }
+  pageNavigation(nav, active.photos.length, active.page, (page) => { active.page = page; render(); });
   $('photo-count').textContent = String(active.photos.length);
   $('summary-count').textContent = String(groups.reduce((sum, group) => sum + countCopies(group), 0));
   const quotation = groups.find(needsQuote);
@@ -279,9 +332,29 @@ function render() {
     note.setAttribute('role', 'status');
     $('checkout-button').after(note);
   }
-  note.hidden = !quotation;
-  note.textContent = quotation ? 'Для такого тиража ' + formatOf(quotation).label + ' стоимость рассчитает менеджер копицентра.' : '';
+  const sizeIssue = orderLimitIssue();
+  note.hidden = !quotation && !sizeIssue;
+  note.textContent = sizeIssue || (quotation ? 'Для такого тиража ' + formatOf(quotation).label + ' стоимость рассчитает менеджер копицентра.' : '');
   if (focusKey) Array.from(root.querySelectorAll('[data-focus-key]')).find((node) => node.dataset.focusKey === focusKey)?.focus({ preventScroll: true });
+}
+function pageNavigation(nav, length, page, change) {
+  const pages = Math.ceil(length / PAGE_SIZE);
+  nav.replaceChildren();
+  nav.hidden = pages < 2;
+  if (nav.hidden) return;
+  nav.setAttribute('aria-label', 'Страницы фотографий');
+  const prev = button('‹', 'crop-command', () => change(page - 1));
+  const next = button('›', 'crop-command', () => change(page + 1));
+  prev.setAttribute('aria-label', 'Предыдущая страница');
+  next.setAttribute('aria-label', 'Следующая страница');
+  prev.disabled = page === 0;
+  next.disabled = page === pages - 1;
+  const select = el('select', 'option-select');
+  select.setAttribute('aria-label', 'Диапазон фотографий');
+  for (let i = 0; i < pages; i++) select.add(new Option((i * PAGE_SIZE + 1) + '–' + Math.min(length, (i + 1) * PAGE_SIZE) + ' из ' + length, i));
+  select.value = page;
+  select.addEventListener('change', () => change(Number(select.value)));
+  nav.append(prev, select, next);
 }
 
 function showDialog(title) {
@@ -305,27 +378,50 @@ function showDialog(title) {
   dialog.showModal();
   return { dialog, content, actions, close };
 }
-function editPhoto(group, photo) {
-  const dialog = showDialog('Настройки снимка');
-  const draft = { ...photo };
+function editPhotos(group, photos, bulk = false) {
+  if (!photos.length || busy) return;
+  const dialog = showDialog(bulk ? 'Редактор группы' : 'Редактор снимка');
+  dialog.dialog.classList.add('crop-dialog');
+  const drafts = photos.map((photo) => ({ ...photo, crop: photo.crop ? { ...photo.crop } : null, extraIds: [...(photo.extraIds || [])] }));
   const format = formatOf(group);
-  let image = preview(draft, format, 'edit-preview');
+  const common = (key) => drafts.every((draft) => draft[key] === drafts[0][key]) ? drafts[0][key] : null;
+  const values = Object.fromEntries(fields.map(({ key }) => [key, common(key)]));
+  const changedDefaults = {};
+  const changedExtras = new Map();
+  const editor = createCropEditor(drafts, format, catalog, bulk);
   const controls = el('div', 'edit-options');
-  bindOptionFields(controls, format, draft, (key, value) => {
-    draft[key] = value;
-    const next = preview(draft, format, 'edit-preview');
-    image.replaceWith(next);
-    image = next;
+  bindOptionFields(controls, format, values, (key, value) => {
+    if (key === 'fitId' || key === 'frameId') editor.flush();
+    changedDefaults[key] = value;
+    for (const draft of drafts) changePhoto(draft, { [key]: value }, format);
+    editor.redraw();
   }, false);
-  bindExtras(controls, format, [draft], (key, selected) => toggleExtra(draft, key, selected), false);
+  bindExtras(controls, format, drafts, (key, selected) => {
+    changedExtras.set(key, selected);
+    for (const draft of drafts) toggleExtra(draft, key, selected);
+  }, false);
   const label = el('label', 'dialog-field', 'Количество экземпляров');
   const copies = el('input', 'option-select');
-  Object.assign(copies, { type: 'number', min: '1', max: '999', step: '1', required: true, value: String(photo.copies) });
+  Object.assign(copies, { type: 'number', min: '1', max: '999', step: '1', required: !bulk, value: common('copies') ?? '', placeholder: 'Разные значения' });
+  let copiesEdited = false;
+  copies.addEventListener('input', () => { copiesEdited = true; });
   label.append(copies);
-  dialog.content.append(image, el('p', 'edit-filename', photo.asset.file.name), controls, label);
+  if (bulk) dialog.content.append(el('p', 'crop-scope', 'Изменения применятся ко всем снимкам формата ' + format.label + '.'));
+  const settingsPanel = el('div', 'crop-settings');
+  settingsPanel.append(controls, label);
+  dialog.content.append(editor.element, settingsPanel);
   dialog.actions.append(button('Отмена', 'button secondary', dialog.close), button('Сохранить', 'button primary', () => {
     if (!copies.reportValidity()) return;
-    Object.assign(photo, draft, { copies: Number(copies.value) });
+    editor.flush();
+    drafts.forEach((draft, index) => {
+      if (copies.value) draft.copies = Number(copies.value);
+      Object.assign(photos[index], draft);
+    });
+    if (bulk) {
+      Object.assign(group.defaults, changedDefaults);
+      for (const [key, selected] of changedExtras) toggleExtra(group.defaults, key, selected);
+      if (copiesEdited && copies.value) group.defaults.copies = Number(copies.value);
+    }
     dialog.close();
     render();
   }));
@@ -341,7 +437,7 @@ function addFormat() {
   dialog.content.append(label);
   const duplicate = el('input');
   duplicate.type = 'checkbox';
-  if (active.photos.length && allPhotos().length + active.photos.length <= 100) {
+  if (active.photos.length && allPhotos().length + active.photos.length <= limits.maxItems) {
     const copyLabel = el('label', 'dialog-check');
     copyLabel.append(duplicate, document.createTextNode(' Добавить снимки из формата ' + formatOf(active).label));
     dialog.content.append(copyLabel);
@@ -349,7 +445,11 @@ function addFormat() {
   dialog.actions.append(button('Отмена', 'button secondary', dialog.close), button('Добавить', 'button primary', () => {
     const format = byId('formats', select.value);
     const group = makeGroup(format);
-    if (duplicate.checked) group.photos = active.photos.map((source) => ({ asset: source.asset, ...settings(format, source) }));
+    if (duplicate.checked) group.photos = active.photos.map((source) => {
+      const copy = { asset: source.asset, ...settings(format, source), crop: null };
+      if (source.crop) setCropPose(copy, format, catalog, cropPose(source, formatOf(active), catalog));
+      return copy;
+    });
     groups.push(group);
     active = group;
     dialog.close();
@@ -367,40 +467,38 @@ function setBusy(value) {
     $('add-format').disabled = value || groups.length >= catalog.formats.length;
   }
 }
-function supportedImage(bytes) {
-  return (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff)
-    || [137, 80, 78, 71, 13, 10, 26, 10].every((b, i) => bytes[i] === b)
-    || (String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF' && String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP');
-}
-async function readAsset(file) {
-  if (file.size > 20 * MiB) throw Error('файл больше 20 МБ');
-  const header = new Uint8Array(await file.slice(0, 12).arrayBuffer());
-  if (!supportedImage(header)) throw Error('нужен файл JPG, PNG или WebP');
-  const url = URL.createObjectURL(file);
-  try {
-    const img = new Image();
-    img.src = url;
-    try { await img.decode(); } catch { throw Error('не удалось прочитать изображение'); }
-    if (img.naturalWidth * img.naturalHeight > 80000000) throw Error('разрешение превышает 80 Мп');
-    const extension = header[0] === 0xff ? 'jpg' : header[0] === 137 ? 'png' : 'webp';
-    return { file, url, extension, width: img.naturalWidth, height: img.naturalHeight };
-  } catch (error) {
-    URL.revokeObjectURL(url);
-    throw error;
-  }
-}
 async function insertFiles(files, group) {
   const issues = [];
   let added = 0;
-  const unique = new Set(allPhotos().map((photo) => photo.asset));
+  const rows = allPhotos();
+  const unique = new Set(rows.map((photo) => photo.asset));
   let totalBytes = Array.from(unique).reduce((sum, asset) => sum + asset.file.size, 0);
+  const known = new Map();
+  const fileKey = (file) => JSON.stringify([file.name, file.size]);
+  const track = (asset) => {
+    const key = fileKey(asset.file);
+    if (!known.has(key)) known.set(key, []);
+    known.get(key).push(asset);
+  };
+  for (const asset of unique) track(asset);
+  let checked = 0;
   for (const file of files) {
-    if (allPhotos().length >= 100) { issues.push('В заказе может быть до 100 снимков.'); break; }
-    if (totalBytes + file.size > 500 * MiB) { issues.push(file.name + ': превышен общий объём заказа 500 МБ.'); continue; }
+    if (rows.length + added >= limits.maxItems) { issues.push('В заказе может быть до ' + limits.maxItems.toLocaleString('ru-RU') + ' снимков.'); break; }
+    checked++;
+    if (files.length > 30 && (checked === 1 || checked % 20 === 0)) feedback('Читаем фотографию ' + checked + ' из ' + files.length + '…');
     try {
-      const asset = await readAsset(file);
+      if (file.size > limits.maxFileBytes) throw Error('файл больше ' + (limits.maxFileBytes / MiB).toLocaleString('ru-RU') + ' МБ');
+      let asset;
+      for (const candidate of known.get(fileKey(file)) || []) {
+        if (await sameFile(candidate.file, file)) { asset = candidate; break; }
+      }
+      if (!asset) {
+        if (totalBytes + file.size > limits.maxOrderBytes) throw Error('превышен суммарный объём оригиналов ' + (limits.maxOrderBytes / 1e9).toLocaleString('ru-RU') + ' ГБ');
+        asset = await readPrintAsset(file);
+        totalBytes += file.size;
+        track(asset);
+      }
       group.photos.push({ asset, ...group.defaults });
-      totalBytes += file.size;
       added++;
     } catch (error) {
       issues.push(file.name + ': ' + error.message + '.');
@@ -408,6 +506,15 @@ async function insertFiles(files, group) {
   }
   const message = added ? 'Добавлено снимков: ' + added + '.' : '';
   feedback([message, ...issues.slice(0, 3), issues.length > 3 ? 'Другие отклонённые файлы: ' + (issues.length - 3) + '.' : ''].filter(Boolean).join(' '), issues.length ? 'error' : 'info');
+}
+async function sameFile(first, second) {
+  if (first === second) return true;
+  for (let offset = 0; offset < first.size; offset += MiB) {
+    const buffers = await Promise.all([first, second].map((file) => file.slice(offset, offset + MiB).arrayBuffer()));
+    const [a, b] = buffers.map((buffer) => new Uint8Array(buffer));
+    if (!a.every((byte, i) => byte === b[i])) return false;
+  }
+  return true;
 }
 async function loadFiles(files) {
   if (busy || !active || !files.length) return;
@@ -449,31 +556,81 @@ async function request(action, init = {}) {
     const error = Error(typeof body.error === 'string' ? body.error : 'Не удалось выполнить запрос к магазину.');
     error.code = body.code;
     error.missingAssetIds = body.missingAssetIds;
+    error.missingPrintIds = body.missingPrintIds;
     throw error;
   }
   return body;
 }
+function renditionKey(group, photo) {
+  return JSON.stringify([photo.asset.assetId, group.formatId, photo.fitId, photo.frameId, photo.crop || null, catalogVersion]);
+}
+async function preparedId(group, photo, requiredKeys) {
+  const asset = photo.asset;
+  asset.prints ??= new Map();
+  const key = renditionKey(group, photo);
+  if (asset.prints.has(key)) return asset.prints.get(key);
+  const jpeg = await renderPrint(photo, formatOf(group), catalog);
+  if (jpeg.size > limits.maxFileBytes) throw Error('Подготовленный отпечаток «' + asset.file.name + '» больше ' + (limits.maxFileBytes / MiB).toLocaleString('ru-RU') + ' МБ.');
+  const form = new FormData();
+  form.set('sessid', sessid);
+  form.set('draftId', draftId);
+  form.set('file', jpeg, 'print.jpg');
+  form.set('assetId', asset.assetId);
+  form.set('formatId', group.formatId);
+  form.set('fitId', photo.fitId);
+  form.set('frameId', photo.frameId);
+  form.set('crop', JSON.stringify(photo.crop || null));
+  form.set('catalogVersion', catalogVersion);
+  const replaceKey = Array.from(asset.prints.keys()).find((candidate) => !requiredKeys.has(candidate));
+  if (replaceKey) form.set('replacePrintId', asset.prints.get(replaceKey));
+  const data = await request('rendition', { method: 'POST', body: form });
+  if (!data.printId) throw Error('Магазин не подтвердил загрузку отпечатка. Повторите попытку.');
+  if (replaceKey) asset.prints.delete(replaceKey);
+  asset.prints.set(key, data.printId);
+  return data.printId;
+}
 async function goToCheckout(setProgress) {
   const assets = Array.from(new Set(allPhotos().map((photo) => photo.asset)));
+  draftId ??= id();
+  const rows = groups.flatMap((group) => group.photos.map((photo) => ({ group, photo })));
+  const keepPrints = new Set();
+  for (const { group, photo } of rows) {
+    const printId = photo.asset.prints?.get(renditionKey(group, photo));
+    if (printId) keepPrints.add(printId);
+  }
+  setProgress('Проверяем состав загрузки…');
+  await request('prepare', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessid, draftId, assetIds: assets.map((asset) => asset.assetId).filter(Boolean), printIds: [...keepPrints] }) });
+  for (const asset of assets) {
+    for (const [key, printId] of asset.prints || []) if (!keepPrints.has(printId)) asset.prints.delete(key);
+  }
   for (const [index, asset] of assets.entries()) {
     if (asset.assetId) continue;
     setProgress('Передаём фото ' + (index + 1) + ' из ' + assets.length + '…');
     const form = new FormData();
     form.set('sessid', sessid);
+    form.set('draftId', draftId);
     form.set('file', asset.file, asset.file.name);
     const data = await request('upload', { method: 'POST', body: form });
     if (!data.assetId) throw Error('Магазин не подтвердил загрузку. Повторите попытку.');
     asset.assetId = data.assetId;
   }
+  const requiredKeys = new Set(rows.map(({group, photo}) => renditionKey(group, photo)));
+  const items = [];
+  for (const [index, { group, photo }] of rows.entries()) {
+    setProgress('Готовим отпечаток ' + (index + 1) + ' из ' + rows.length + '…');
+    const printId = await preparedId(group, photo, requiredKeys);
+    items.push({
+      assetId: photo.asset.assetId, formatId: group.formatId, paperId: photo.paperId, fitId: photo.fitId,
+      frameId: photo.frameId, extraIds: photo.extraIds || [], copies: photo.copies, crop: photo.crop || null, printId
+    });
+  }
   setProgress('Добавляем печать в корзину…');
-  const items = groups.flatMap((group) => group.photos.map(({ asset, paperId, fitId, frameId, extraIds, copies }) => ({
-    assetId: asset.assetId, formatId: group.formatId, paperId, fitId, frameId, extraIds: extraIds || [], copies
-  })));
   const key = JSON.stringify({ centerId, items });
   if (key !== checkoutKey) { checkoutKey = key; checkoutRequest = id(); }
   const data = await request('basket', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessid, requestId: checkoutRequest, catalogVersion, centerId, items, expectedTotal: groups.reduce((sum, group) => sum + subtotal(group), 0) / 100 })
+    body: JSON.stringify({ sessid, draftId, requestId: checkoutRequest, catalogVersion, renderVersion: 1, centerId, items, expectedTotal: groups.reduce((sum, group) => sum + subtotal(group), 0) / 100 })
   });
   if (!data.checkoutUrl) throw Error('Магазин не передал ссылку для оформления.');
   const url = new URL(data.checkoutUrl, location.href);
@@ -483,9 +640,11 @@ async function goToCheckout(setProgress) {
 function safeFile(name) {
   return name.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/[. ]+$/g, '').slice(0, 140) || 'photo';
 }
-async function downloadOrder(number) {
+async function buildDemoOrder(number, setProgress) {
   const center = byId('centers', centerId);
   const entries = [];
+  const totalPhotos = allPhotos().length;
+  let printBytes = 0;
   const spec = {
     orderNumber: number, centerId: center.id, center: center.label,
     totalCopies: groups.reduce((sum, group) => sum + countCopies(group), 0),
@@ -504,9 +663,21 @@ async function downloadOrder(number) {
       const folder = code + '_' + quantity;
       for (const [index, photo] of photos.entries()) {
         const basename = safeFile(photo.asset.file.name.replace(/\.[^.]+$/, ''));
-        const path = folder + '/' + String(index + 1).padStart(4, '0') + '_' + photo.copies + 'x_' + basename + '.' + photo.asset.extension;
+        const stem = String(index + 1).padStart(4, '0') + '_' + photo.copies + 'x_' + basename;
+        const originalPath = folder + '/originals/' + stem + '.' + photo.asset.extension;
+        const printPath = folder + '/' + stem + '.jpg';
+        setProgress('Готовим отпечаток ' + (spec.photos.length + 1) + ' из ' + totalPhotos + '…');
+        const jpeg = await renderPrint(photo, format, catalog);
+        printBytes += jpeg.size;
+        if (jpeg.size > 20 * MiB || printBytes > MAX_SOURCE_BYTES) {
+          throw Error('Готовые отпечатки превышают лимит: 20 МБ на файл и 20 ГБ на заказ.');
+        }
+        const layout = layoutPrint(photo, format, catalog);
+        const digest = crypto.subtle ? new Uint8Array(await crypto.subtle.digest('SHA-256', await jpeg.arrayBuffer())) : null;
         const line = {
-          archiveFile: path, originalName: photo.asset.file.name, formatId: format.id, formatLabel: format.label,
+          archiveFile: originalPath, originalArchiveFile: originalPath, printArchiveFile: printPath, crop: photo.crop || null,
+          printWidth: layout.width, printHeight: layout.height, printSha256: digest ? Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('') : null,
+          originalName: photo.asset.file.name, formatId: format.id, formatLabel: format.label,
           width: format.width, height: format.height, paperId: photo.paperId, paperLabel: byId('papers', photo.paperId).label,
           fitId: photo.fitId, fitLabel: byId('fits', photo.fitId).label, frameId: photo.frameId, frameLabel: byId('frames', photo.frameId).label,
           extraIds: photo.extraIds || [], extras: (photo.extraIds || []).map((key) => {
@@ -520,38 +691,76 @@ async function downloadOrder(number) {
           line[key] = surcharge(format, field.list, byId(field.list, photo[field.key])) / 100;
         }
         spec.photos.push(line);
-        entries.push({ path, blob: photo.asset.file });
+        entries.push({ path: originalPath, blob: photo.asset.file }, { path: printPath, blob: jpeg });
       }
     }
   }
   entries.push({ path: 'specification.json', blob: new Blob([JSON.stringify(spec, null, 2)], { type: 'application/json' }) });
+  entries.push({ path: 'Заказ.txt', blob: new Blob(['\uFEFF', printOrderText(spec)], { type: 'text/plain;charset=utf-8' }) });
+  setProgress('Упаковываем оригиналы и отпечатки…');
   const blob = await makeZip(entries);
+  return { spec, blob, filename: safeFile(center.id) + '_' + number + '.zip' };
+}
+function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const link = el('a');
   link.href = url;
-  link.download = safeFile(center.id) + '_' + number + '.zip';
+  link.download = filename;
   document.body.append(link);
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+async function finishDemoOrder(dialog, message, number) {
+  if (await synchronizeDemo()) return;
+  const { spec, blob, filename } = await buildDemoOrder(number, (progress) => { message.textContent = progress; });
+  if (await synchronizeDemo()) return;
+  let saved;
+  try {
+    const { saveDemoOrder } = await import('./demo-orders.js');
+    saved = await saveDemoOrder(spec, blob);
+    message.textContent = 'Демозаказ ' + number + ' сохранён. Архив доступен в разделе «Заказы» демоадминки этого браузера.';
+  } catch {
+    message.textContent = 'Не удалось сохранить заказ в этом браузере. Вы можете скачать готовый архив.';
+  }
+  dialog.dialog.dataset.orderComplete = 'true';
+  dialog.actions.replaceChildren(button('Закрыть', 'button secondary', dialog.close));
+  if (saved) {
+    const orders = el('a', 'button secondary', 'Заказы в демоадминке');
+    orders.href = new URL('./admin.html#orders', import.meta.url);
+    orders.target = '_blank';
+    orders.rel = 'noopener';
+    dialog.actions.append(orders);
+  }
+  dialog.actions.append(button('Скачать ZIP заказа', 'button primary', () => downloadBlob(blob, saved?.filename || filename)));
 }
 async function review() {
   if (busy || !canCheckout()) return;
   if (await synchronizeDemo() || openDialog?.open) return;
   const dialog = showDialog('Проверить заказ');
   const list = el('div', 'review-list');
+  const rows = [];
   for (const group of groups.filter((entry) => entry.photos.length)) {
     const row = el('div', 'review-row');
     row.append(el('strong', '', formatOf(group).label), el('span', '', countCopies(group) + ' шт. · ' + money(subtotal(group))));
     list.append(row);
-    for (const photo of group.photos) {
+    for (const photo of group.photos) rows.push({ group, photo });
+  }
+  const reviewPhotos = el('div', 'review-list');
+  const reviewNav = el('nav', 'photo-pagination');
+  function reviewPage(page) {
+    reviewPhotos.replaceChildren();
+    for (const { group, photo } of rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)) {
       const info = el('div', 'review-photo');
-      const options = [...fields.map((field) => byId(field.list, photo[field.key]).label),
+      const options = [formatOf(group).label, ...fields.map((field) => byId(field.list, photo[field.key]).label),
         ...(photo.extraIds || []).map((key) => byId('extras', key).label)].join(' · ');
       info.append(el('span', 'review-name', photo.asset.file.name), el('span', '', options + ' · ' + photo.copies + ' шт. × ' + money(unitPrice(group, photo))));
-      list.append(info);
+      reviewPhotos.append(info);
     }
+    pageNavigation(reviewNav, rows.length, page, reviewPage);
   }
+  reviewPage(0);
+  list.append(reviewPhotos, reviewNav);
   const center = byId('centers', centerId);
   const total = groups.reduce((sum, group) => sum + subtotal(group), 0);
   const totalRow = el('div', 'review-row review-total');
@@ -559,30 +768,44 @@ async function review() {
   dialog.content.append(list, el('p', '', 'Самовывоз: ' + center.label), totalRow);
   const message = el('p', 'review-note', endpoint
     ? 'Данные получателя и способ оплаты вы укажете при оформлении в магазине.'
-    : 'Это демонстрационный заказ. Скачайте архив с оригиналами и спецификацией печати. Оплата не требуется.');
+    : 'При создании демозаказа этот браузер сохранит архив с исходными фото, готовыми отпечатками и спецификацией. Он появится в демоадминке. Оплата не требуется.');
   message.setAttribute('role', 'status');
   dialog.content.append(message);
-  const number = 'DEMO-' + id().slice(0, 8).toUpperCase();
-  const action = button(endpoint ? 'Перейти к оформлению' : 'Скачать ZIP заказа', 'button primary', async () => {
+  if (!endpoint) {
+    const assets = new Set(rows.map(({ photo }) => photo.asset));
+    const bytes = Array.from(assets).reduce((sum, asset) => sum + asset.file.size, 0);
+    if (bytes > 500 * MiB || rows.length > 500) {
+      dialog.content.append(el('p', 'review-note', 'Большой архив потребует свободного места на устройстве. Держите вкладку открытой, пока браузер готовит файлы.'));
+    }
+  }
+  const number = 'DEMO-' + Date.now().toString(36).toUpperCase() + '-' + id().slice(0, 6).toUpperCase();
+  const action = button(endpoint ? 'Перейти к оформлению' : 'Создать демозаказ', 'button primary', async () => {
     dialog.dialog.dataset.working = 'true';
     dialog.dialog.addEventListener('cancel', preventCancel);
     for (const control of dialog.dialog.querySelectorAll('button')) control.disabled = true;
     setBusy(true);
     try {
       if (endpoint) await goToCheckout((status) => { message.textContent = status; });
-      else if (!await synchronizeDemo()) {
-        message.textContent = 'Готовим архив…';
-        await downloadOrder(number);
-        message.textContent = 'Архив готов. Скачивание началось.';
-      }
+      else await finishDemoOrder(dialog, message, number);
     } catch (error) {
-      message.textContent = error.message;
-      if (['PRICE_CHANGED', 'CATALOG_CHANGED', 'SESSION_EXPIRED', 'ASSET_EXPIRED'].includes(error.code)) {
+      message.textContent = error.name === 'QuotaExceededError' || error instanceof RangeError
+        ? 'Браузеру не хватило места для подготовки архива. Освободите место или разделите заказ на части.' : error.message;
+      if (['PRICE_CHANGED', 'CATALOG_CHANGED', 'SESSION_EXPIRED', 'ASSET_EXPIRED', 'PRINT_EXPIRED'].includes(error.code)) {
         try {
           if (error.code === 'ASSET_EXPIRED') {
             const expired = Array.isArray(error.missingAssetIds) ? new Set(error.missingAssetIds) : null;
+            for (const asset of new Set(allPhotos().map((photo) => photo.asset))) {
+              if (!expired || expired.has(asset.assetId)) {
+                delete asset.assetId;
+                asset.prints?.clear();
+              }
+            }
+          } else if (error.code === 'PRINT_EXPIRED') {
+            const expired = Array.isArray(error.missingPrintIds) ? new Set(error.missingPrintIds) : null;
             for (const { asset } of allPhotos()) {
-              if (!expired || expired.has(asset.assetId)) delete asset.assetId;
+              for (const [key, printId] of asset.prints || []) {
+                if (!expired || expired.has(printId)) asset.prints.delete(key);
+              }
             }
           }
           const changes = await refreshCatalog();
@@ -634,6 +857,7 @@ async function refreshCatalog(data) {
   data ??= await readCatalog();
   const previous = catalog;
   catalog = data.catalog;
+  applyLimits(data.limits);
   sessid = data.sessid;
   catalogVersion = data.catalogVersion;
   const changes = new Set();
@@ -659,7 +883,7 @@ async function refreshCatalog(data) {
           changes.add('Услуга «' + label + '» больше недоступна для этого формата и исключена из расчёта.');
         }
       }
-      Object.assign(photo, updated);
+      changePhoto(photo, updated, format, previous.formats.find((entry) => entry.id === group.formatId), previous);
       next.photos.push(photo);
     }
     refreshed.set(format.id, next);
@@ -678,14 +902,14 @@ async function synchronizeDemo() {
   if (endpoint || !active) return false;
   const data = await readCatalog();
   if (catalogVersion === data.catalogVersion) return false;
-  openDialog?.close();
+  if (!openDialog?.dataset.orderComplete) openDialog?.close();
   const changes = await refreshCatalog(data);
   feedback(['Настройки демо обновились. Проверьте параметры, пункт выдачи и сумму заказа.', ...changes].join(' '));
   return true;
 }
 
 function bindControls() {
-  $('file-input').accept = 'image/jpeg,image/png,image/webp';
+  $('file-input').accept = 'image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif';
   $('file-input').multiple = true;
   $('file-input').addEventListener('change', (event) => {
     const files = Array.from(event.target.files);
@@ -702,11 +926,13 @@ function bindControls() {
     if (busy && !event.target.closest('dialog')) { event.preventDefault(); event.stopImmediatePropagation(); }
   }, true);
   $('add-format').addEventListener('click', addFormat);
+  $('bulk-edit')?.addEventListener('click', () => editPhotos(active, active.photos, true));
   $('format-select').addEventListener('change', (event) => {
+    const previousFormat = formatOf(active);
     const format = byId('formats', event.target.value);
     active.formatId = format.id;
     active.defaults = settings(format, active.defaults);
-    for (const photo of active.photos) Object.assign(photo, settings(format, photo));
+    for (const photo of active.photos) changePhoto(photo, settings(format, photo), format, previousFormat);
     render();
   });
   $('center-select').addEventListener('change', (event) => { centerId = event.target.value; });
@@ -751,6 +977,7 @@ async function initialize() {
   try {
     const data = await readCatalog();
     catalog = data.catalog;
+    applyLimits(data.limits);
     catalogVersion = data.catalogVersion;
     sessid = data.sessid;
     active = makeGroup(catalog.formats[0]);
