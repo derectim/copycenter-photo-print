@@ -90,7 +90,13 @@ function renderOrders(entries) {
     block.append(node('p',text));
     if (orderState === 'ready') {
       const link = node('a','Перейти в конструктор','adm-btn secondary');
-      link.href = './#print-app'; block.append(link);
+      link.href = './#print-app';
+      const sample = node('a','Скачать пример ZIP','adm-btn secondary');
+      sample.href = './examples/KIT_DEMO-PRINT.zip';
+      sample.download = 'KIT_DEMO-PRINT.zip';
+      const actions = node('div', null, 'adm-actions');
+      actions.append(link, sample);
+      block.append(actions);
     }
     entries.append(block);
     return;

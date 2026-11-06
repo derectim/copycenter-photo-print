@@ -43,6 +43,7 @@
 .adm-status {padding:0 24px;color:#315c38;font-size:14px}
 .adm-status:empty {display:none}
 .empty-entries {padding:12px 24px}
+.empty-entries .adm-actions {flex-wrap:wrap;gap:8px}
 #admin-dialog {width:min(700px,calc(100% - 24px));max-height:90vh;max-height:90dvh;margin:auto;padding:0;border:1px solid var(--line);border-radius:16px;color:var(--ink);font:inherit}
 #admin-dialog::backdrop {background:#1d211e80}
 #entry-form {display:flex;flex-direction:column;max-height:88vh;max-height:88dvh}
