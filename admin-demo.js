@@ -1,6 +1,6 @@
 import { demoCatalog, frameStyles } from './catalog.js';
 import { assignment, sectionLabels, DEMO_CATALOG_KEY, readDemoCatalog, saveDemoCatalog } from './admin-catalog.js';
-import { ORDER_CHANNEL, listDemoOrders, readDemoOrder, removeDemoOrder } from './demo-orders.js';
+import { ORDER_CHANNEL, listDemoOrders, readDemoOrder, removeDemoOrder } from './demo-orders.js?v=2.1';
 import {demoUsage} from './demo-account.js';
 
 async function refreshStorage(){
@@ -25,7 +25,7 @@ const descriptions = {
   formats:'Размер отпечатка, доступные опции и цена за тираж.',
   options:'Общие доплаты за отпечаток. Для отдельных форматов можно задать свою цену.',
   centers:'Эти пункты доступны при оформлении демонстрационного заказа.',
-  orders:'Здесь хранятся демозаказы, созданные в этом браузере. В каждом ZIP есть готовые отпечатки, оригиналы и файл «Заказ.txt».'
+  orders:'В новых ZIP каждый JPEG — один экземпляр. Папки обозначают формат, бумагу, рамку и поля. Спецификация доступна отдельно.'
 };
 let catalog = readDemoCatalog();
 let page = location.hash === '#orders' ? 'orders' : 'formats';
@@ -63,13 +63,15 @@ async function reloadOrders() {
   render();
 }
 
-async function downloadDemo(order) {
+async function downloadDemo(order, specification = false) {
   try {
-    const {blob} = await readDemoOrder(order.orderNumber);
-    const url = URL.createObjectURL(blob);
+    const {blob, sheet} = await readDemoOrder(order.orderNumber);
+    const download = specification ? sheet : blob;
+    if (!download) throw Error('Спецификация этого заказа сохранена внутри первоначального ZIP.');
+    const url = URL.createObjectURL(download);
     const link = node('a');
     link.href = url;
-    link.download = order.filename;
+    link.download = specification ? order.filename.replace(/\.zip$/i, '_спецификация.txt') : order.filename;
     document.body.append(link);
     link.click();
     link.remove();
@@ -106,7 +108,9 @@ function renderOrders(entries) {
     const save = button('Скачать ZIP','adm-btn secondary',()=>downloadDemo(order));
     const remove = button('×','adm-icon',()=>openEditor('remove-order',order));
     remove.setAttribute('aria-label','Удалить заказ ' + order.orderNumber);
-    actions.append(save,remove);
+    actions.append(save);
+    if (order.hasSheet) actions.append(button('Спецификация','adm-link',()=>downloadDemo(order,true)));
+    actions.append(remove);
     row.append(identity,details,actions);
     entries.append(row);
   }

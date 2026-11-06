@@ -104,13 +104,23 @@ const cards = typeof IntersectionObserver !== 'undefined' ? new IntersectionObse
   }
   drainCards();
 },{rootMargin:'140px'}) : null;
+
+// Size the displayed paper independently of the canvas bitmap. This also makes the
+// crop handles follow the exact edges of the complete source image on resize.
+function sizePreview(sheet, width, height) {
+  sheet.style.setProperty('--preview-aspect', String(width / height));
+  sheet.style.setProperty('--preview-height-percent', (100 * height / width) + '%');
+}
+
 export function photoPreview(photo, format, catalog, className) {
-  const frame = node('div',className), canvas = node('canvas','print-sheet snapshot-proof');
+  const frame = node('div',className), sheet = node('div','print-sheet fitted-preview');
+  const canvas = node('canvas','snapshot-proof');
   const layout = layoutPrint(photo,format,catalog);
-  canvas.style.setProperty('--sheet-ratio', String(layout.width/layout.height));
+  sizePreview(sheet, layout.width, layout.height);
   canvas.setAttribute('role','img');
   canvas.setAttribute('aria-label',photo.asset.file.name);
-  frame.append(canvas);
+  sheet.append(canvas);
+  frame.append(sheet);
   const job={canvas,photo,format,catalog};
   if (cards) {cardJobs.set(canvas,job); cards.observe(canvas);}
   else requestAnimationFrame(() => {cardQueue.push(job); drainCards();});
@@ -205,7 +215,7 @@ export function createCropEditor(drafts, format, catalog, bulk, onFrame) {
   const sourcePane = node('div','edit-pane'), proofPane = node('div','edit-pane');
   const sourceTitle = node('span','edit-view-label','Область печати');
   const sourceStage = node('div','editor-source-stage');
-  const sourceSheet = node('div','editor-source-sheet'), sourceCanvas = node('canvas','editor-source');
+  const sourceSheet = node('div','editor-source-sheet fitted-preview'), sourceCanvas = node('canvas','editor-source');
   sourceCanvas.setAttribute('role','img'); sourceCanvas.setAttribute('aria-label','Полный снимок');
   const box = node('div','editor-crop-box');
   box.tabIndex = 0; box.setAttribute('role','group');
@@ -218,9 +228,11 @@ export function createCropEditor(drafts, format, catalog, bulk, onFrame) {
   }
   sourceSheet.append(sourceCanvas,box); sourceStage.append(sourceSheet);
   sourcePane.append(sourceTitle,sourceStage);
-  const proof = node('canvas','editor-proof'), proofStage = node('div','editor-proof-stage');
+  const proof = node('canvas','editor-proof'), proofSheet = node('div','print-sheet fitted-preview');
+  const proofStage = node('div','editor-proof-stage');
   proof.setAttribute('role','img'); proof.setAttribute('aria-label','Готовый отпечаток');
-  proofStage.append(proof); proofPane.append(node('span','edit-view-label','Готовый отпечаток'),proofStage);
+  proofSheet.append(proof);
+  proofStage.append(proofSheet); proofPane.append(node('span','edit-view-label','Готовый отпечаток'),proofStage);
   views.append(sourcePane,proofPane);
   const quality = node('p','photo-quality');
   const hint = node('p','crop-hint','Перетащите область печати. Потяните за угол, чтобы изменить её размер.');
@@ -314,8 +326,8 @@ export function createCropEditor(drafts, format, catalog, bulk, onFrame) {
     }
     const source = compare ? {...current,crop:null,edits:null} : current;
     const raw = layoutPrint(source,format,catalog).view;
-    sourceSheet.style.setProperty('--source-ratio',String(raw.width/raw.height));
-    proof.style.setProperty('--sheet-ratio',String(layout.width/layout.height));
+    sizePreview(sourceSheet,raw.width,raw.height);
+    sizePreview(proofSheet,layout.width,layout.height);
     sourceTitle.textContent=compare ? 'Оригинал' : 'Область печати';
     box.hidden=hint.hidden=compare;
     place(layout.source);

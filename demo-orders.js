@@ -1,4 +1,5 @@
 import {vault, sweep, allowBytes} from './demo-vault.js';
+import {printOrderText} from './print-order-text.js?v=2.1';
 
 export const ORDER_CHANNEL = 'copycenter-demo-orders-updates';
 
@@ -23,19 +24,20 @@ export async function saveDemoOrder(spec, blob) {
     throw new Error('Не удалось проверить архив демозаказа.');
   }
   const orderNumber = String(spec.orderNumber);
+  const sheet = new Blob(['\uFEFF', printOrderText(spec)], {type:'text/plain;charset=utf-8'});
   const metadata = {
     orderNumber, centerId:spec.centerId, centerLabel:String(spec.center || spec.centerId),
     total:spec.total, totalCopies:spec.totalCopies,
     createdAt:new Date().toISOString(), filename:filenamePart(spec.centerId) + '_' + filenamePart(orderNumber) + '.zip',
-    byteSize:blob.size
+    byteSize:blob.size + sheet.size, hasSheet:true
   };
   const result = await vault('readwrite', async api => {
     await sweep(api);
     const existing = await api.get('orders',orderNumber);
     if (existing) metadata.createdAt = existing.createdAt;
-    await allowBytes(api, blob.size - (existing?.byteSize || 0));
+    await allowBytes(api, metadata.byteSize - (existing?.byteSize || 0));
     await api.put('orders',metadata);
-    await api.put('archives',blob,orderNumber);
+    await api.put('archives',{zip:blob, sheet},orderNumber);
     return metadata;
   });
   notifyChange();
@@ -51,9 +53,11 @@ export async function readDemoOrder(orderNumber) {
   return vault('readwrite', async api => {
     await sweep(api);
     const order = await api.get('orders',String(orderNumber));
-    const blob = await api.get('archives',String(orderNumber));
+    const stored = await api.get('archives',String(orderNumber));
+    // The earlier version stored a plain ZIP Blob with its specification inside.
+    const blob = stored instanceof Blob ? stored : stored?.zip;
     if (!order || !(blob instanceof Blob)) throw Error('Срок хранения истёк или демозаказ удалён.');
-    return {order,blob};
+    return {order,blob,sheet:stored?.sheet};
   });
 }
 

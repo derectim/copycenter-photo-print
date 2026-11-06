@@ -9,13 +9,31 @@
   flex-direction: column;
 }
 #print-app .crop-dialog .dialog-header, #print-app .crop-dialog .dialog-actions {flex: none}
-#print-app .crop-dialog .dialog-content {min-height: 0; overflow-y: auto; overscroll-behavior: contain}
-#print-app .crop-settings {display: grid; gap: 14px; align-content: start}
+#print-app .crop-dialog .dialog-content {min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain}
+#print-app .crop-settings {display: grid; gap: 14px; align-content: start; min-width: 0}
 #print-app .crop-editor {display: grid; gap: 12px; min-width: 0}
-#print-app .print-sheet.snapshot-proof {
-  width: min(100cqw,calc(var(--sheet-ratio) * 100cqh));
-  height: min(100cqh,calc(100cqw / var(--sheet-ratio)));
-  background: #fff;
+/* The stage height is explicit; its width comes from the gallery/dialog column.
+   Give the sheet its own proportional box. A canvas's native resolution must
+   never set the size of a grid track or extend into the next control. */
+#print-app .fitted-preview {
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: calc((var(--preview-stage-height) - var(--preview-padding) - var(--preview-padding)) * var(--preview-aspect));
+  min-width: 0;
+}
+#print-app .fitted-preview::before {
+  content: "";
+  display: block;
+  padding-top: var(--preview-height-percent);
+}
+#print-app .fitted-preview > canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 #print-app .crop-navigation {display: flex; align-items: center; justify-content: center; gap: 12px}
 #print-app .crop-filename {font-size: 15px; text-align: center; overflow-wrap: anywhere}
@@ -23,22 +41,17 @@
 #print-app .edit-pane {min-width: 0}
 #print-app .edit-views.source-expanded {grid-template-columns: 1fr}
 #print-app .source-expanded .edit-pane:last-child {display: none}
-#print-app .source-expanded .editor-source-stage {height: clamp(270px,57dvh,560px)}
+#print-app .source-expanded .editor-source-stage {--preview-stage-height: clamp(270px,57vh,560px)}
 #print-app .edit-view-label {display: block; margin: 0 0 6px; color: var(--muted); font-size: 14px; font-weight: 700}
 #print-app .editor-source-stage, #print-app .editor-proof-stage {
-  display: grid; place-items: center; height: clamp(175px,29vh,300px);
-  container-type: size; padding: 10px; border-radius: 9px; background: #eceee6;
+  --preview-stage-height: clamp(175px,29vh,300px);
+  --preview-padding: 10px;
+  display: flex; align-items: center; justify-content: center;
+  min-width: 0; height: var(--preview-stage-height); padding: var(--preview-padding);
+  overflow: hidden; border-radius: 9px; background: #eceee6;
 }
 #print-app .editor-source-sheet {
-  width: min(100cqw,calc(var(--source-ratio) * 100cqh));
-  height: min(100cqh,calc(100cqw / var(--source-ratio)));
-  position: relative; overflow: hidden; background: #e7e8df;
-}
-#print-app .editor-source {display: block; width: 100%; height: 100%}
-#print-app .editor-proof {
-  display: block; width: min(100cqw,calc(var(--sheet-ratio) * 100cqh));
-  height: min(100cqh,calc(100cqw / var(--sheet-ratio)));
-  box-shadow: 0 3px 9px #20231c26;
+  overflow: hidden; background: #e7e8df;
 }
 #print-app .editor-crop-box {
   position: absolute; outline: 2px solid #ffcc49; outline-offset: -2px; cursor: move;
@@ -86,7 +99,7 @@
 }
 @media(max-width:560px) {
   #print-app .edit-views {grid-template-columns: minmax(0,1.7fr) minmax(0,1fr); gap: 7px}
-  #print-app .editor-source-stage, #print-app .editor-proof-stage {height: clamp(210px,32dvh,255px); padding: 4px}
+  #print-app .editor-source-stage, #print-app .editor-proof-stage {--preview-stage-height: clamp(210px,32vh,255px); --preview-padding: 4px}
   #print-app .edit-tone-grid {grid-template-columns: 1fr}
   #print-app .editor-edges {grid-template-columns: repeat(2,minmax(0,1fr))}
 }

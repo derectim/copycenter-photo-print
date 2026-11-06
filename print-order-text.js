@@ -30,8 +30,7 @@ export function printOrderText(spec) {
     'Количество отпечатков: ' + spec.totalCopies,
     'Стоимость печати: ' + rubles.format(spec.total),
     '',
-    'Для печати используйте файлы JPEG, указанные в каждой строке «Печатать».',
-    'Каждый JPEG в папке формата — один экземпляр. Папка originals содержит исходники клиента.',
+    'Для печати откройте папку нужных параметров и отправьте каждый JPEG в печать один раз.',
     '',
     ...(spec.formats || []).map(f => f.label + ' · ' + f.copies + ' шт. · ' + rubles.format(f.total)),
     ''
@@ -47,7 +46,6 @@ export function printOrderText(spec) {
       '   Дополнительные услуги: ' + (photo.extras?.map(extra => extra.label).join(', ') || '—'),
       '   Цена за экземпляр: ' + rubles.format(photo.unitPrice),
       '   Печатать: ' + (photo.printArchiveFiles || [photo.printArchiveFile]).join('\r\n             '),
-      '   Оригинал: ' + (photo.originalArchiveFile || photo.archiveFile),
       ''
     );
   });

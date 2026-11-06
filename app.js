@@ -1,10 +1,10 @@
 import { demoCatalog } from './catalog.js';
 import { makeZip } from './zip.js';
-import { photoPreview, releasePreviews, createCropEditor, cropPose, setCropPose } from './photo-editor.js';
+import { photoPreview, releasePreviews, createCropEditor, cropPose, setCropPose } from './photo-editor.js?v=2.1';
 import { constrainFrameEdits, layoutPrint, renderPrint } from './print-render.js';
 import { readPrintAsset } from './photo-input.js';
 import {connectWorkspace} from './photo-workspace.js';
-import { printOrderText } from './print-order-text.js';
+import {productionRuns, safePrintBasename} from './production-folders.js';
 
 const root = document.getElementById('print-app');
 const $ = (id) => root.querySelector('#' + id);
@@ -714,7 +714,7 @@ function safeFile(name) {
 async function buildDemoOrder(number, setProgress) {
   const center = byId('centers', centerId);
   const entries = [];
-  const originals=new Map();
+  const pathEncoder = new TextEncoder();
   const {demoUsage}=await import('./demo-account.js');
   const available=await demoUsage();
   let archiveBytes=0;
@@ -726,61 +726,52 @@ async function buildDemoOrder(number, setProgress) {
     total: groups.reduce((sum, group) => sum + subtotal(group), 0) / 100, photos: [],
     formats:groups.filter(g=>g.photos.length).map(g=>({formatId:g.formatId,label:formatOf(g).label,copies:countCopies(g),total:subtotal(g)/100}))
   };
-  for (const group of groups) {
-    const format = formatOf(group);
-    const printRuns = new Map();
-    for (const photo of group.photos) {
-      const code = [format.id, photo.paperId, photo.fitId, photo.frameId, ...(photo.extraIds || [])].map(safeFile).join('_');
-      if (!printRuns.has(code)) printRuns.set(code, []);
-      printRuns.get(code).push(photo);
-    }
-    for (const [code, photos] of printRuns) {
-      const quantity = photos.reduce((n, photo) => n + photo.copies, 0);
-      const folder = safeFile(center.id) + '_' + code + '_' + quantity;
-      for (const [index, photo] of photos.entries()) {
-        const basename = safeFile(photo.asset.file.name.replace(/\.[^.]+$/, ''));
-        const stem = String(index + 1).padStart(4, '0') + '_' + photo.copies + 'x_' + basename;
-        const originalPath = originals.get(photo.asset) || 'originals/' + String(originals.size+1).padStart(4,'0') + '_' + basename + '.' + photo.asset.extension;
-        const printPaths=Array.from({length:photo.copies},(_,i)=>folder+'/'+stem+'_копия_'+String(i+1).padStart(3,'0')+'.jpg');
-        const printPath=printPaths[0];
-        setProgress('Готовим отпечаток ' + (spec.photos.length + 1) + ' из ' + totalPhotos + '…');
-        const jpeg = await renderPrint(photo, format, catalog);
-        printBytes += jpeg.size;
-        if (jpeg.size > 20 * MiB || printBytes > MAX_SOURCE_BYTES) {
-          throw Error('Готовые отпечатки превышают лимит: 20 МБ на файл и 20 ГБ на заказ.');
-        }
-        archiveBytes+=(jpeg.size+128)*photo.copies + (originals.has(photo.asset)?0:photo.asset.file.size+128);
-        if (archiveBytes > available.limit - available.used) throw Error('Для архива со всеми печатными копиями недостаточно места в общем хранилище 20 ГБ.');
-        const layout = layoutPrint(photo, format, catalog);
-        const digest = crypto.subtle ? new Uint8Array(await crypto.subtle.digest('SHA-256', await jpeg.arrayBuffer())) : null;
-        const line = {
-          archiveFile: originalPath, originalArchiveFile: originalPath, printArchiveFile: printPath, crop: photo.crop || null,
-          edits: photo.edits || null,
-          cropReference: photo.edits?.angle || photo.edits?.mirrorX || photo.edits?.mirrorY ? 'transformed-original' : 'oriented-original',
-          printWidth: layout.width, printHeight: layout.height, printSha256: digest ? Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('') : null,
-          originalName: photo.asset.file.name, formatId: format.id, formatLabel: format.label,
-          width: format.width, height: format.height, paperId: photo.paperId, paperLabel: byId('papers', photo.paperId).label,
-          fitId: photo.fitId, fitLabel: byId('fits', photo.fitId).label, frameId: photo.frameId, frameLabel: byId('frames', photo.frameId).label,
-          extraIds: photo.extraIds || [], extras: (photo.extraIds || []).map((key) => {
-            const extra = byId('extras', key);
-            return { ...extra, surcharge: surcharge(format, 'extras', extra) / 100 };
-          }),
-          copies: photo.copies, unitPrice: unitPrice(group, photo) / 100
-        };
-        for (const field of fields) {
-          const key = field.key.replace(/Id$/, 'Surcharge');
-          line[key] = surcharge(format, field.list, byId(field.list, photo[field.key])) / 100;
-        }
-        line.printArchiveFiles=printPaths;
-        spec.photos.push(line);
-        if(!originals.has(photo.asset)){originals.set(photo.asset,originalPath);entries.push({path:originalPath,blob:photo.asset.file});}
-        for(const path of printPaths)entries.push({path,blob:jpeg});
+  const runs = productionRuns(groups.flatMap(group => group.photos.map(photo => ({
+    group, format: formatOf(group), photo, formatId: group.formatId, paperId: photo.paperId,
+    frameId: photo.frameId, frameStyle: byId('frames', photo.frameId).preview || photo.frameId,
+    fitId: photo.fitId, fitStyle: byId('fits', photo.fitId).preview || photo.fitId,
+    frameEdits: photo.edits?.frame, extraIds: photo.extraIds
+  }))));
+  for (const {folder, rows} of runs) {
+    for (const [index, {group, format, photo}] of rows.entries()) {
+      const basename = safePrintBasename(photo.asset.file.name, Math.min(160, 200 - folder.length));
+      const stem = String(index + 1).padStart(4, '0') + '_' + basename;
+      const printPaths=Array.from({length:photo.copies},(_,i)=>folder+'/'+stem+'_копия_'+String(i+1).padStart(3,'0')+'.jpg');
+      const printPath=printPaths[0];
+      setProgress('Готовим отпечаток ' + (spec.photos.length + 1) + ' из ' + totalPhotos + '…');
+      const jpeg = await renderPrint(photo, format, catalog);
+      printBytes += jpeg.size;
+      if (jpeg.size > 20 * MiB || printBytes > MAX_SOURCE_BYTES) {
+        throw Error('Готовые отпечатки превышают лимит: 20 МБ на файл и 20 ГБ на заказ.');
       }
+      archiveBytes += printPaths.reduce((bytes, path) => bytes + jpeg.size + 128 + 2 * pathEncoder.encode(path).length, 0);
+      if (archiveBytes > available.limit - available.used) throw Error('Для архива со всеми печатными копиями недостаточно места в общем хранилище 20 ГБ.');
+      const layout = layoutPrint(photo, format, catalog);
+      const digest = crypto.subtle ? new Uint8Array(await crypto.subtle.digest('SHA-256', await jpeg.arrayBuffer())) : null;
+      const line = {
+        archiveFile: printPath, printArchiveFile: printPath, folder, crop: photo.crop || null,
+        edits: photo.edits || null,
+        cropReference: photo.edits?.angle || photo.edits?.mirrorX || photo.edits?.mirrorY ? 'transformed-original' : 'oriented-original',
+        printWidth: layout.width, printHeight: layout.height, printSha256: digest ? Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('') : null,
+        originalName: photo.asset.file.name, formatId: format.id, formatLabel: format.label,
+        width: format.width, height: format.height, paperId: photo.paperId, paperLabel: byId('papers', photo.paperId).label,
+        fitId: photo.fitId, fitLabel: byId('fits', photo.fitId).label, frameId: photo.frameId, frameLabel: byId('frames', photo.frameId).label,
+        extraIds: photo.extraIds || [], extras: (photo.extraIds || []).map((key) => {
+          const extra = byId('extras', key);
+          return { ...extra, surcharge: surcharge(format, 'extras', extra) / 100 };
+        }),
+        copies: photo.copies, unitPrice: unitPrice(group, photo) / 100
+      };
+      for (const field of fields) {
+        const key = field.key.replace(/Id$/, 'Surcharge');
+        line[key] = surcharge(format, field.list, byId(field.list, photo[field.key])) / 100;
+      }
+      line.printArchiveFiles=printPaths;
+      spec.photos.push(line);
+      for(const path of printPaths)entries.push({path,blob:jpeg});
     }
   }
-  entries.push({ path: 'specification.json', blob: new Blob([JSON.stringify(spec, null, 2)], { type: 'application/json' }) });
-  entries.push({ path: 'Заказ.txt', blob: new Blob(['\uFEFF', printOrderText(spec)], { type: 'text/plain;charset=utf-8' }) });
-  setProgress('Упаковываем оригиналы и отпечатки…');
+  setProgress('Упаковываем JPEG по папкам печати…');
   const blob = await makeZip(entries);
   return { spec, blob, filename: safeFile(center.id) + '_' + number + '.zip' };
 }
@@ -800,7 +791,7 @@ async function finishDemoOrder(dialog, message, number) {
   if (await synchronizeDemo()) return;
   let saved;
   try {
-    const { saveDemoOrder } = await import('./demo-orders.js');
+    const { saveDemoOrder } = await import('./demo-orders.js?v=2.1');
     saved = await saveDemoOrder(spec, blob);
     message.textContent = 'Демозаказ ' + number + ' сохранён. Архив доступен в разделе «Заказы» демоадминки этого браузера.';
   } catch {
@@ -852,7 +843,7 @@ async function review() {
   dialog.content.append(list, el('p', '', 'Самовывоз: ' + center.label), totalRow);
   const message = el('p', 'review-note', endpoint
     ? 'Данные получателя и способ оплаты вы укажете при оформлении в магазине.'
-    : 'При создании демозаказа этот браузер сохранит архив с исходными фото, готовыми отпечатками и спецификацией. Он появится в демоадминке. Оплата не требуется.');
+    : 'Демозаказ появится в админке этого браузера. В ZIP каждый заказанный экземпляр будет отдельным JPEG в папке своего формата, бумаги, рамки и полей.');
   message.setAttribute('role', 'status');
   dialog.content.append(message);
   if (!endpoint) {
