@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Демо админки фотопечати — Копицентр.РФ</title>
+  <link rel="icon" href="./assets/brand-icon.png">
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./admin-demo.css">
+  <script src="./icons.js" defer></script>
+  <script src="./admin-demo.js" type="module"></script>
+</head>
+<body class="photo-demo admin-demo">
+  <header class="mast"><div class="outer mast-inner">
+    <a class="brand" href="./"><img src="./assets/kopicenter-logo.png" width="200" height="35" alt="Копицентр.РФ — сеть копировальных центров"></a>
+    <nav aria-label="Навигация"><a href="./#print-app">Конструктор</a><a href="./#price-info">Цены и форматы</a><a class="active" href="./admin.html" aria-current="page">Демо админки</a></nav>
+  </div></header>
+  <main class="outer admin-main">
+    <div class="crumb"><a href="./#print-app">Фотопечать</a><span>›</span><span>Управление каталогом</span></div>
+    <div class="admin-intro"><div><h1>Демо админки</h1><p>Настройте форматы и цены для конструктора фотопечати. Изменения сохраняются в этом браузере.</p></div>
+      <a class="adm-btn secondary" href="./#print-app">Открыть конструктор <i data-icon="arrow"></i></a>
+    </div>
+    <div class="admin-layout">
+      <aside class="adm-nav">
+        <h2>Каталог фотопечати</h2>
+        <div id="admin-nav" aria-label="Разделы каталога"></div>
+        <button id="reset-catalog" class="adm-reset" type="button">Восстановить демоданные</button>
+      </aside>
+      <section class="adm-content" aria-labelledby="list-title">
+        <header class="adm-panel-head"><div><h2 id="list-title">Форматы печати</h2><p id="list-desc"></p></div><button class="adm-btn primary" id="add-entry" type="button"></button></header>
+        <div id="category-picker"></div>
+        <div id="entries" class="entries"></div>
+        <p class="adm-status" id="admin-status" role="status" aria-live="polite"></p>
+      </section>
+    </div>
+  </main>
+  <dialog id="admin-dialog" aria-labelledby="dialog-title">
+    <form id="entry-form"><div class="modal-head"><h2 id="dialog-title"></h2><button type="button" class="adm-icon" id="close-edit" aria-label="Закрыть форму"><i data-icon="x"></i></button></div>
+      <div class="modal-body" id="edit-fields"></div>
+      <p id="edit-error" class="edit-error" role="alert"></p>
+      <div class="modal-foot"><button id="cancel-edit" type="button" class="adm-btn secondary">Отмена</button><button id="save-entry" class="adm-btn primary" type="submit">Сохранить</button></div>
+    </form>
+  </dialog>
+</body>
+</html>

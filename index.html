@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Загрузите фотографии, выберите формат, бумагу и тираж. Демонстрация конструктора фотопечати Копицентр.РФ.">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Печать фотографий онлайн — Копицентр.РФ</title>
+  <link rel="icon" href="./assets/brand-icon.png">
+  <link rel="stylesheet" href="./style.css">
+  <script src="./icons.js" defer></script>
+  <script type="module" src="./app.js"></script>
+  <script type="module" src="./prices.js"></script>
+</head>
+<body class="photo-demo">
+  <a class="skip" href="#print-app">К конструктору</a>
+  <header class="mast">
+    <div class="outer mast-inner">
+      <a class="brand" href="./" aria-label="Копицентр.РФ — начало страницы"><img src="./assets/kopicenter-logo.png" width="230" height="40" alt="Копицентр.РФ — сеть копировальных центров"></a>
+      <nav aria-label="Навигация по странице">
+        <a class="active" href="#print-app">Конструктор</a>
+        <a href="#price-info">Цены и форматы</a>
+        <a href="./admin.html" target="_blank" rel="noopener">Демо админки</a>
+      </nav>
+      <a class="locations" href="https://копицентр.рф/company/contacts/" target="_blank" rel="noopener"><i data-icon="pin"></i><span>Пункты выдачи</span><i data-icon="external"></i></a>
+    </div>
+  </header>
+  <main class="outer">
+    <div class="crumb"><a href="https://копицентр.рф/">Главная</a><span>›</span><a href="https://копицентр.рф/service/">Услуги</a><span>›</span><span>Печать фотографий</span></div>
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <div class="hero-kicker"><span class="kicker-rule"></span> Онлайн-фотолаборатория</div>
+        <h1 id="hero-title">Печать <br>фотографий</h1>
+        <p>Загрузите любимые кадры и выберите,<br class="desktop-break"> какими они станут на бумаге.</p>
+        <div class="hero-facts"><span><i data-icon="tag"></i>от 15 ₽ за фото</span><span><i data-icon="clock"></i>5–7 рабочих дней</span></div>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+        <div class="art-grid"></div>
+        <div class="paper paper-lake"><img src="./assets/sample-lake.jpg" alt=""></div>
+        <div class="paper paper-city"><img src="./assets/sample-city.jpg" alt=""></div>
+        <div class="paper paper-coast"><img src="./assets/sample-coast.jpg" alt=""></div>
+        <svg class="sunmark" viewBox="0 0 80 80" aria-hidden="true"><path fill="currentColor" d="m40 0 6 12 12-7 1 14 14-1-6 12 13 6-12 7 8 11-14 2 1 14-13-5-6 14-7-12-11 9-3-14-14 2 4-14-13-4 11-9-9-10 14-4-3-13 13 3z"/><g fill="none" stroke="#2a2c25" stroke-width="2.5"><circle cx="40" cy="39" r="13"/><path d="m34 27 7 12 11-1m-1-7-8 12 5 8m-16-2 7-11-9 1"/></g></svg>
+      </div>
+    </section>
+    <!--widget:start-->
+    <section id="print-app" aria-labelledby="constructor-title">
+      <div class="section-top">
+        <h2 id="constructor-title">Конструктор печати</h2>
+        <details class="how"><summary><i data-icon="help"></i> Как заказать</summary><div><strong>Как оформить заказ</strong><ol><li>Добавьте фото и задайте параметры печати.</li><li>Проверьте количество копий и выберите копицентр.</li><li>Перейдите к оформлению заказа.</li></ol><p class="demo-only">В демонстрации можно скачать пробный архив. Оплата отключена.</p></div></details>
+      </div>
+      <div class="work-grid">
+        <div class="work-left">
+          <div class="panel workspace">
+            <div class="panel-head">
+              <h3><i data-icon="images"></i> Ваши фотографии <span class="count-pill" id="photo-count" aria-label="Фотографий">0</span></h3>
+              <button type="button" class="text-button" id="sample-button"><i data-icon="play"></i> Добавить пример</button>
+            </div>
+            <div class="formats-bar"><div id="format-tabs" aria-label="Группы фотографий"></div><button type="button" id="add-format" class="add-tab"><i data-icon="plus"></i> Добавить формат</button></div>
+            <div class="photo-body">
+              <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp" multiple hidden>
+              <div id="empty-upload" class="dropzone">
+                <div class="drop-symbol" aria-hidden="true"><span></span><i data-icon="image"></i><b>+</b></div>
+                <strong>Перетащите фотографии сюда</strong>
+                <span class="drop-hint">JPG, PNG или WebP · до 20 МБ за файл</span>
+                <button type="button" class="button primary" id="upload-button" data-action="upload"><i data-icon="upload"></i> Выбрать файлы</button>
+              </div>
+              <div id="photos" aria-label="Загруженные фотографии"></div>
+              <button id="more-files" type="button" data-action="upload" class="button secondary"><i data-icon="plus"></i> Добавить ещё фото</button>
+              <div id="feedback" role="status" aria-live="polite"></div>
+            </div>
+            <div class="privacy"><i data-icon="shield"></i><span data-privacy>В демо ваши фотографии остаются в браузере.</span></div>
+          </div>
+          <!--demo-tariffs:start-->
+          <section id="price-info" class="price-info panel" aria-labelledby="prices-title">
+            <div class="panel-head"><h3 id="prices-title"><i data-icon="tag"></i> Цены и форматы</h3><a class="text-button" href="./admin.html" target="_blank" rel="noopener">Изменить в демо админки <i data-icon="external"></i></a></div>
+            <div class="price-content">
+              <div class="price-scroll"><table><caption>Цена одного отпечатка без дополнительных услуг</caption><thead></thead><tbody></tbody></table></div>
+              <p>Для 10 × 10 см задан пример тарифа. Остальные исходные цены взяты из <a href="https://копицентр.рф/service/photo_printing/" target="_blank" rel="noopener">прайса копицентра</a>.</p>
+            </div>
+          </section>
+          <!--demo-tariffs:end-->
+        </div>
+        <aside class="panel settings" aria-labelledby="settings-title">
+          <div class="panel-head"><h3 id="settings-title"><i data-icon="sliders"></i> Параметры печати</h3></div>
+          <div class="setting-body">
+            <label class="field"><span>Формат отпечатка</span><select id="format-select"></select></label>
+            <div id="option-fields"></div>
+            <div class="copies-line"><label for="copies-input">Копий каждого фото</label><div class="stepper"><button id="copies-minus" type="button" aria-label="Уменьшить число копий">−</button><input id="copies-input" type="number" min="1" max="999" value="1"><button id="copies-plus" type="button" aria-label="Увеличить число копий">+</button></div></div>
+            <label class="field center-select"><span><i data-icon="pin"></i> Пункт выдачи</span><select id="center-select"></select></label>
+          </div>
+          <div class="summary">
+            <div><span>Цена за отпечаток</span><b id="summary-price">—</b></div>
+            <div><span>Всего отпечатков</span><b id="summary-count">0</b></div>
+            <div class="total"><strong>Итого</strong><strong id="summary-total">0 ₽</strong></div>
+            <button id="checkout-button" type="button" class="button primary checkout" disabled>К оформлению <i data-icon="arrow"></i></button>
+          </div>
+        </aside>
+      </div>
+      <div id="dialogs"></div>
+    </section>
+    <!--widget:end-->
+
+  </main>
+  <footer><div class="outer"><span>Копицентр.РФ</span><a href="./admin.html" target="_blank" rel="noopener">Открыть демо админки <i data-icon="external"></i></a></div></footer>
+</body></html>
