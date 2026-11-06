@@ -251,7 +251,8 @@ $('#entry-form').addEventListener('submit', event => {
   try {
     if (JSON.stringify(readDemoCatalog()) !== session.source) throw new Error('Каталог изменился в другой вкладке. Закройте форму и откройте её снова.');
     const next = applyChange(clone(catalog));
-    saveDemoCatalog(next);
+    if (session.action === 'reset') window.localStorage.removeItem(DEMO_CATALOG_KEY);
+    else saveDemoCatalog(next);
     catalog = next;
     dialog.close();
     render();
