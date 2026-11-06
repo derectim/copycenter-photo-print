@@ -186,6 +186,44 @@
   scroll-margin-top: 18px;
 }
 
+#print-app .print-breadcrumbs {
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+#print-app .print-breadcrumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#print-app .print-breadcrumbs li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+#print-app .print-breadcrumbs a {
+  display: inline-block;
+  padding-block: 2px;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+#print-app .print-breadcrumbs a:hover,
+#print-app .print-breadcrumbs [aria-current="page"] {
+  color: var(--ink);
+}
+
 #print-app button {
   cursor: pointer;
   background: none;
