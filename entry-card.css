@@ -1,0 +1,64 @@
+/* This link is embedded in the shop's existing service page. */
+.cc-photo-entry,
+.cc-photo-entry * {
+  box-sizing: border-box;
+}
+a.cc-photo-entry {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  padding: 18px 14px;
+  border: 1.5px dashed #b9bdac;
+  border-radius: 12px;
+  background: #f9faf5;
+  color: #252923;
+  font-family: inherit;
+  line-height: 1.4;
+  text-align: center;
+  text-decoration: none;
+}
+a.cc-photo-entry:hover {
+  border-color: #a47b24;
+  background: #fff9e8;
+  color: #252923;
+  text-decoration: none;
+}
+a.cc-photo-entry:focus-visible {
+  outline: 3px solid #1e74a5;
+  outline-offset: 3px;
+}
+.cc-photo-entry .cc-photo-entry__icon {
+  display: block;
+  width: 64px;
+  height: 48px;
+}
+.cc-photo-entry .cc-photo-entry__title {
+  color: #252923;
+  font-size: clamp(18px, 2vw, 22px);
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.cc-photo-entry .cc-photo-entry__hint {
+  color: #555c50;
+  font-size: 14px;
+}
+.cc-photo-entry .cc-photo-entry__cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  margin-top: 4px;
+  padding: 9px 18px;
+  border-radius: 8px;
+  background: #ffbe2a;
+  color: #252923;
+  font-size: 15px;
+  font-weight: 700;
+}

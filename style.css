@@ -801,22 +801,6 @@
   -webkit-appearance: none;
 }
 
-#print-app .center-select {
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
-}
-
-#print-app .center-select>span {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-#print-app .center-select .pp-icon {
-  width: 16px;
-  height: 16px;
-}
-
 #print-app .summary {
   border-top: 1px solid var(--line);
   background: #fafaf5;
@@ -1351,10 +1335,6 @@
     align-self: end;
   }
 
-  #print-app .center-select {
-    grid-column: 1/-1;
-  }
-
   :where(.photo-demo) .price-info {
     margin-top: 26px;
   }
@@ -1464,7 +1444,6 @@
   }
 
   #print-app .copies-line,
-  #print-app .center-select,
   :where(.photo-demo, #print-app) #option-fields {
     grid-column: auto;
     grid-row: auto;

@@ -8,9 +8,9 @@
   <meta name="referrer" content="same-origin">
   <title>Печать фотографий онлайн — Копицентр.РФ</title>
   <link rel="icon" href="./assets/brand-icon.png">
-  <link rel="stylesheet" href="./style.css?v=2.1">
+  <link rel="stylesheet" href="./style.css?v=2.2">
   <script src="./icons.js" defer></script>
-  <script type="module" src="./app.js?v=2.1"></script>
+  <script type="module" src="./app.js?v=2.2"></script>
   <script type="module" src="./prices.js"></script>
 </head>
 <body class="photo-demo">
@@ -27,7 +27,7 @@
     </div>
   </header>
   <main class="outer">
-    <div class="crumb"><a href="https://копицентр.рф/">Главная</a><span>›</span><a href="https://копицентр.рф/service/">Услуги</a><span>›</span><span>Печать фотографий</span></div>
+    <div class="crumb"><a href="https://копицентр.рф/">Главная</a><span>›</span><a href="https://копицентр.рф/service/">Услуги</a><span>›</span><a href="./service.html">Печать фотографий</a></div>
     <section class="hero" aria-labelledby="hero-title">
       <div class="hero-copy">
         <div class="hero-kicker"><span class="kicker-rule"></span> Онлайн-фотолаборатория</div>
@@ -47,7 +47,7 @@
     <section id="print-app" aria-labelledby="constructor-title">
       <div class="section-top">
         <h2 id="constructor-title">Конструктор печати</h2>
-        <details class="how"><summary><i data-icon="help"></i> Как заказать</summary><div><strong>Как оформить заказ</strong><ol><li>Добавьте фото и выберите формат печати.</li><li>Обрежьте отдельный кадр или отредактируйте снимки формата вместе. Для 10 × 10 доступны рамки «Полароид».</li><li>Проверьте тираж, выберите копицентр и перейдите к оформлению.</li></ol><p class="demo-only">В демонстрации можно скачать пробный архив. Оплата отключена.</p></div></details>
+        <details class="how"><summary><i data-icon="help"></i> Как заказать</summary><div><strong>Как оформить заказ</strong><ol><li>Добавьте фото и выберите формат печати.</li><li>Обрежьте отдельный кадр или отредактируйте снимки формата вместе. Для 10 × 10 доступны рамки «Полароид».</li><li>Проверьте тираж и добавьте фотографии в корзину. При оформлении выберите пункт выдачи.</li></ol><p class="demo-only">В демонстрации можно скачать пробный архив. Оплата отключена.</p></div></details>
       </div>
       <div class="account-tools" aria-label="Фотографии и заказы">
         <button id="library-open" type="button"><i data-icon="images"></i> Моя библиотека</button>
@@ -107,14 +107,13 @@
             <label class="field"><span>Формат отпечатка</span><select id="format-select"></select><small id="format-physical"></small></label>
             <div id="option-fields"></div>
             <div class="copies-line"><label for="copies-input">Копий каждого фото</label><div class="stepper"><button id="copies-minus" type="button" aria-label="Уменьшить число копий">−</button><input id="copies-input" type="number" min="1" max="999" value="1"><button id="copies-plus" type="button" aria-label="Увеличить число копий">+</button></div></div>
-            <label class="field center-select"><span><i data-icon="pin"></i> Пункт выдачи</span><select id="center-select"></select></label>
           </div>
           <div class="summary">
             <section id="format-estimate" class="format-estimate" aria-label="Стоимость по форматам" hidden></section>
             <div><span>Цена за отпечаток</span><b id="summary-price">—</b></div>
             <div><span>Всего отпечатков</span><b id="summary-count">0</b></div>
             <div class="total"><strong>Итого</strong><strong id="summary-total">0 ₽</strong></div>
-            <button id="checkout-button" type="button" class="button primary checkout" disabled>К оформлению <i data-icon="arrow"></i></button>
+            <button id="checkout-button" type="button" class="button primary checkout" disabled>В корзину <i data-icon="arrow"></i></button>
           </div>
         </aside>
       </div>

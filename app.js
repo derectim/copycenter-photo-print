@@ -3,7 +3,7 @@ import { makeZip } from './zip.js';
 import { photoPreview, releasePreviews, createCropEditor, cropPose, setCropPose } from './photo-editor.js?v=2.1';
 import { constrainFrameEdits, layoutPrint, renderPrint } from './print-render.js';
 import { readPrintAsset } from './photo-input.js';
-import {connectWorkspace} from './photo-workspace.js';
+import {connectWorkspace} from './photo-workspace.js?v=2.2';
 import {productionRuns, safePrintBasename} from './production-folders.js';
 
 const root = document.getElementById('print-app');
@@ -39,7 +39,6 @@ let sessid;
 let signedUserId;
 let groups = [];
 let active;
-let centerId;
 let busy = false;
 let checkoutKey = '';
 let checkoutRequest;
@@ -658,7 +657,7 @@ async function preparedId(group, photo, requiredKeys) {
   asset.prints.set(key, data.printId);
   return data.printId;
 }
-async function goToCheckout(setProgress) {
+async function goToBasket(setProgress) {
   await workspace.save(true);
   draftId=workspace.draftId;
   const assets = Array.from(new Set(allPhotos().map((photo) => photo.asset)));
@@ -697,22 +696,21 @@ async function goToCheckout(setProgress) {
     });
   }
   setProgress('Добавляем печать в корзину…');
-  const key = JSON.stringify({ centerId, items });
+  const key = JSON.stringify(items);
   if (key !== checkoutKey) { checkoutKey = key; checkoutRequest = id(); }
   const data = await request('basket', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessid, draftId, replaceJobId:workspace.jobId, editorPath:location.pathname, requestId: checkoutRequest, catalogVersion, renderVersion: 1, centerId, items, expectedTotal: groups.reduce((sum, group) => sum + subtotal(group), 0) / 100 })
+    body: JSON.stringify({ sessid, draftId, replaceJobId:workspace.jobId, editorPath:location.pathname, requestId: checkoutRequest, catalogVersion, renderVersion: 1, items, expectedTotal: groups.reduce((sum, group) => sum + subtotal(group), 0) / 100 })
   });
-  if (!data.checkoutUrl) throw Error('Магазин не передал ссылку для оформления.');
-  const url = new URL(data.checkoutUrl, location.href);
-  if (url.origin !== location.origin || !['http:', 'https:'].includes(url.protocol)) throw Error('Некорректная ссылка на оформление заказа.');
+  if (!data.basketUrl) throw Error('Магазин не передал ссылку на корзину. Проверьте версию модуля фотопечати.');
+  const url = new URL(data.basketUrl, location.href);
+  if (url.origin !== location.origin || !['http:', 'https:'].includes(url.protocol)) throw Error('Некорректная ссылка на корзину магазина.');
   location.assign(url.href);
 }
 function safeFile(name) {
   return name.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/[. ]+$/g, '').slice(0, 140) || 'photo';
 }
-async function buildDemoOrder(number, setProgress) {
-  const center = byId('centers', centerId);
+async function buildDemoOrder(number, center, setProgress) {
   const entries = [];
   const pathEncoder = new TextEncoder();
   const {demoUsage}=await import('./demo-account.js');
@@ -785,9 +783,9 @@ function downloadBlob(blob, filename) {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
-async function finishDemoOrder(dialog, message, number) {
+async function finishDemoOrder(dialog, message, number, center) {
   if (await synchronizeDemo()) return;
-  const { spec, blob, filename } = await buildDemoOrder(number, (progress) => { message.textContent = progress; });
+  const { spec, blob, filename } = await buildDemoOrder(number, center, (progress) => { message.textContent = progress; });
   if (await synchronizeDemo()) return;
   let saved;
   try {
@@ -812,7 +810,7 @@ async function review() {
   if (busy || !canCheckout()) return;
   try{await workspace.save(true);}catch(e){feedback(e.message,'error');return;}
   if (await synchronizeDemo() || openDialog?.open) return;
-  const dialog = showDialog('Проверить заказ');
+  const dialog = showDialog(endpoint ? 'Добавление в корзину' : 'Корзина');
   const list = el('div', 'review-list');
   const rows = [];
   for (const group of groups.filter((entry) => entry.photos.length)) {
@@ -836,14 +834,12 @@ async function review() {
   }
   reviewPage(0);
   list.append(reviewPhotos, reviewNav);
-  const center = byId('centers', centerId);
   const total = groups.reduce((sum, group) => sum + subtotal(group), 0);
   const totalRow = el('div', 'review-row review-total');
   totalRow.append(el('strong', '', 'Итого'), el('strong', '', money(total)));
-  dialog.content.append(list, el('p', '', 'Самовывоз: ' + center.label), totalRow);
+  dialog.content.append(list, totalRow);
   const message = el('p', 'review-note', endpoint
-    ? 'Данные получателя и способ оплаты вы укажете при оформлении в магазине.'
-    : 'Демозаказ появится в админке этого браузера. В ZIP каждый заказанный экземпляр будет отдельным JPEG в папке своего формата, бумаги, рамки и полей.');
+    ? 'Готовим фотографии для корзины магазина.' : '');
   message.setAttribute('role', 'status');
   dialog.content.append(message);
   if (!endpoint) {
@@ -854,14 +850,17 @@ async function review() {
     }
   }
   const number = 'DEMO-' + Date.now().toString(36).toUpperCase() + '-' + id().slice(0, 6).toUpperCase();
-  const action = button(endpoint ? 'Перейти к оформлению' : 'Создать демозаказ', 'button primary', async () => {
+  let pickup;
+  const action = button(endpoint ? 'Повторить добавление' : 'Создать демозаказ', 'button primary', async () => {
+    const center = endpoint ? null : byId('centers', pickup.value);
+    if (!endpoint && !center) { pickup.reportValidity(); return; }
     dialog.dialog.dataset.working = 'true';
     dialog.dialog.addEventListener('cancel', preventCancel);
-    for (const control of dialog.dialog.querySelectorAll('button')) control.disabled = true;
+    for (const control of dialog.dialog.querySelectorAll('button, select')) control.disabled = true;
     setBusy(true);
     try {
-      if (endpoint) await goToCheckout((status) => { message.textContent = status; });
-      else await finishDemoOrder(dialog, message, number);
+      if (endpoint) await goToBasket((status) => { message.textContent = status; });
+      else await finishDemoOrder(dialog, message, number, center);
     } catch (error) {
       message.textContent = error.name === 'QuotaExceededError' || error instanceof RangeError
         ? 'Браузеру не хватило места для подготовки архива. Освободите место или разделите заказ на части.' : error.message;
@@ -895,17 +894,53 @@ async function review() {
     finally {
       delete dialog.dialog.dataset.working;
       dialog.dialog.removeEventListener('cancel', preventCancel);
-      for (const control of dialog.dialog.querySelectorAll('button')) control.disabled = false;
+      for (const control of dialog.dialog.querySelectorAll('button, select')) control.disabled = false;
+      if (dialog.dialog.dataset.orderComplete && pickup) pickup.disabled = true;
       setBusy(false);
     }
   });
-  dialog.actions.append(button('Вернуться', 'button secondary', dialog.close), action);
+  if (endpoint) {
+    dialog.actions.append(button('Вернуться', 'button secondary', dialog.close), action);
+    action.click();
+    return;
+  }
+  function showDemoCheckout() {
+    dialog.dialog.querySelector('h2').textContent = 'Оформление заказа';
+    const field = el('label', 'dialog-field');
+    pickup = el('select');
+    pickup.required = true;
+    const choices = catalog.centers || [];
+    setOptions(pickup, [{id:'', label:'Выберите пункт выдачи'}, ...choices], '');
+    pickup.options[0].disabled = true;
+    field.append(el('span', '', 'Пункт выдачи'), pickup);
+    dialog.content.insertBefore(field, totalRow);
+    message.textContent = choices.length ? '' : 'Пункты выдачи пока недоступны. Проверьте настройки в демоадминке.';
+    action.disabled = true;
+    pickup.addEventListener('change', () => {
+      const center = byId('centers', pickup.value);
+      action.disabled = !center;
+      message.textContent = center ? 'Самовывоз — ' + center.label : '';
+    });
+    dialog.actions.replaceChildren(button('Вернуться в корзину', 'button secondary', () => {
+      field.remove();
+      showDemoBasket();
+    }), action);
+    pickup.focus();
+  }
+  function showDemoBasket() {
+    dialog.dialog.querySelector('h2').textContent = 'Корзина';
+    message.textContent = 'Пункт выдачи вы выберете при оформлении.';
+    dialog.actions.replaceChildren(button('Вернуться к фотографиям', 'button secondary', dialog.close),
+      button('Перейти к оформлению', 'button primary', showDemoCheckout));
+  }
+  showDemoBasket();
 }
 function preventCancel(event) { event.preventDefault(); }
 
 function validCatalog(data) {
-  const lists = ['formats', 'papers', 'fits', 'frames', 'centers'];
+  const lists = ['formats', 'papers', 'fits', 'frames'];
   if (!data || !lists.every((list) => Array.isArray(data[list]) && data[list].length)) return false;
+  if (data.centers != null && (!Array.isArray(data.centers) || data.centers.some(center => !center?.id || !center.label))) return false;
   const extras = data.extras ?? [];
   if (!Array.isArray(extras) || extras.some((extra) => !extra.id || !extra.label || !Number.isFinite(Number(extra.surcharge)) || extra.surcharge < 0)) return false;
   return data.formats.every((fmt) =>
@@ -924,7 +959,7 @@ async function readCatalog() {
     const checked = validCatalog(catalog) ? catalog : demoCatalog;
     data = { catalog: checked, catalogVersion: JSON.stringify(checked) };
   }
-  if (!validCatalog(data.catalog)) throw Error('Фотопечать пока недоступна. Проверьте настройки форматов и копицентров в магазине.');
+  if (!validCatalog(data.catalog)) throw Error('Фотопечать пока недоступна. Проверьте настройки каталога печати в магазине.');
   if (endpoint && !data.sessid) throw Error('Не удалось открыть сессию магазина. Обновите страницу.');
   return data;
 }
@@ -965,11 +1000,6 @@ async function refreshCatalog(data) {
     if (group === priorActive) active = next;
   }
   groups = Array.from(refreshed.values());
-  if (!byId('centers', centerId)) {
-    centerId = catalog.centers[0].id;
-    changes.add('Выбран доступный пункт выдачи «' + catalog.centers[0].label + '».');
-  }
-  setOptions($('center-select'), catalog.centers, centerId);
   render();
   return changes;
 }
@@ -979,7 +1009,7 @@ async function synchronizeDemo() {
   if (catalogVersion === data.catalogVersion) return false;
   if (!openDialog?.dataset.orderComplete) openDialog?.close();
   const changes = await refreshCatalog(data);
-  feedback(['Настройки демо обновились. Проверьте параметры, пункт выдачи и сумму заказа.', ...changes].join(' '));
+  feedback(['Настройки демо обновились. Проверьте параметры печати и сумму заказа.', ...changes].join(' '));
   return true;
 }
 
@@ -1010,7 +1040,6 @@ function bindControls() {
     for (const photo of active.photos) changePhoto(photo, settings(format, photo), format, previousFormat);
     render();
   });
-  $('center-select').addEventListener('change', (event) => { centerId = event.target.value; workspace?.changed(); });
   $('copies-minus').addEventListener('click', () => updateDefaults('copies', Math.max(1, active.defaults.copies - 1)));
   $('copies-plus').addEventListener('click', () => updateDefaults('copies', Math.min(999, active.defaults.copies + 1)));
   const copies = $('copies-input');
@@ -1067,17 +1096,16 @@ function bindControls() {
   });
 }
 function draftSnapshot() {
-  return {centerId,activeFormatId:active.formatId,groups:groups.map(group=>({
+  return {activeFormatId:active.formatId,groups:groups.map(group=>({
     formatId:group.formatId, defaults:group.defaults,
     photos:group.photos.map(photo=>({...settings(formatOf(group),photo),assetId:photo.asset.assetId,
       crop:photo.crop||null,edits:photo.edits||null}))
   }))};
 }
-function replaceRows(next,chosen,center){
+function replaceRows(next,chosen){
   const old=new Set(allPhotos().map(p=>p.asset));
   groups=next;active=groups.find(g=>g.formatId===chosen)||groups[0];
-  centerId=byId('centers',center)?center:catalog.centers[0].id;
-  $('center-select').value=centerId;checkoutKey='';checkoutRequest=null;selectedPhotos.clear();
+  checkoutKey='';checkoutRequest=null;selectedPhotos.clear();
   for(const asset of old)URL.revokeObjectURL(asset.url);
   render();
 }
@@ -1096,7 +1124,7 @@ function restoreRows(state,assets){
     }
     rebuilt.set(format.id,group);
   }
-  replaceRows(rebuilt.size?[...rebuilt.values()]:[makeGroup(catalog.formats[0])],state.activeFormatId,state.centerId);
+  replaceRows(rebuilt.size?[...rebuilt.values()]:[makeGroup(catalog.formats[0])],state.activeFormatId);
 }
 async function addPhonePhoto(info,file){
   const existing=allPhotos().find(p=>p.asset.assetId===info.assetId);
@@ -1124,11 +1152,9 @@ async function initialize() {
     signedUserId = data.auth?.userId;
     active = makeGroup(catalog.formats[0]);
     groups = [active];
-    centerId = catalog.centers[0].id;
-    setOptions($('center-select'), catalog.centers, centerId);
     bindControls();
     workspace=await connectWorkspace({root,$,endpoint,sessid:()=>sessid,showDialog,feedback,
-      snapshot:draftSnapshot,restore:restoreRows,reset:()=>replaceRows([makeGroup(catalog.formats[0])],catalog.formats[0].id,catalog.centers[0].id),
+      snapshot:draftSnapshot,restore:restoreRows,reset:()=>replaceRows([makeGroup(catalog.formats[0])],catalog.formats[0].id),
       rows:allPhotos,busy:()=>busy,activeFormat:()=>active.formatId,loadFiles,addRemote:addPhonePhoto,
       containsAsset:(id,fmt)=>groups.some(g=>g.formatId===(byId('formats',fmt)?.id||catalog.formats[0].id)&&g.photos.some(p=>p.asset.assetId===id))},data);
     if (!endpoint) {

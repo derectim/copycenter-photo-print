@@ -165,7 +165,7 @@ export async function connectWorkspace(ui,data) {
     if(!projects.length)dialog.content.append(node('p','В текущей корзине пока нет проектов фотопечати.'));
     for(const job of projects){
       const row=node('div','','draft-row'),actions=node('div','','lib-actions');
-      row.append(node('strong',job.centerLabel+' · '+job.total.toLocaleString('ru-RU')+' ₽'));
+      row.append(node('strong','Фотопечать · '+job.total.toLocaleString('ru-RU')+' ₽'));
       if(job.draftId)actions.append(button('Изменить',launch(async()=>{await restore(job.draftId,{job:job.jobId});dialog.close();})),
         button('Дублировать',launch(async()=>{await restore(job.draftId,{copy:true});dialog.close();})));
       actions.append(button('Убрать из корзины',launch(async()=>{
