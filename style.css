@@ -37,6 +37,7 @@
 .photo-demo h1,
 .photo-demo h2,
 .photo-demo h3,
+#print-app h1,
 #print-app h2,
 #print-app h3,
 :where(.photo-demo, #print-app) .print-dialog h2,
@@ -161,19 +162,6 @@
   right: 0;
 }
 
-:where(.photo-demo) .locations {
-  margin-left: auto;
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  font-weight: 700;
-}
-
-:where(.photo-demo) .locations i:last-child .pp-icon {
-  width: 16px;
-  height: 16px;
-}
-
 :where(.photo-demo) .mast a:hover,
 :where(.photo-demo) .price-info>a:hover {
   color: #855300;
@@ -191,157 +179,6 @@
 
 :where(.photo-demo) .crumb a:hover {
   text-decoration: underline;
-}
-
-:where(.photo-demo) .hero {
-  position: relative;
-  overflow: hidden;
-  isolation: isolate;
-  border-radius: 20px;
-  background: #f6e7c6;
-  background: linear-gradient(107deg,#f8edcf 1%,#f7e6bd 61%,#efd5a6 100%);
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  min-height: 285px;
-}
-
-:where(.photo-demo) .hero-copy {
-  padding: 32px 0 29px 40px;
-  position: relative;
-  z-index: 1;
-}
-
-:where(.photo-demo) .hero-kicker {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  font-size: 14px;
-  font-weight: 750;
-  letter-spacing: .02em;
-  color: #5b503c;
-}
-
-:where(.photo-demo) .kicker-rule {
-  width: 24px;
-  height: 3px;
-  border-radius: 3px;
-  background: #8c6b2d;
-}
-
-:where(.photo-demo) .hero h1 {
-  font-size: clamp(46px,4.25vw,67px);
-  line-height: .96;
-  letter-spacing: -.059em;
-  margin: 13px 0 12px;
-  font-weight: 800;
-}
-
-:where(.photo-demo) .hero p {
-  margin: 0;
-  color: #4f5045;
-  font-size: 16px;
-  line-height: 1.45;
-  font-weight: 550;
-}
-
-:where(.photo-demo) .hero-facts {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  flex-wrap: wrap;
-  margin-top: 19px;
-}
-
-:where(.photo-demo) .hero-facts span {
-  display: flex;
-  gap: 7px;
-  align-items: center;
-  font-size: 14px;
-  font-weight: 700;
-  color: #403e35;
-}
-
-:where(.photo-demo) .hero-facts span+span {
-  border-left: 1px solid #bcae8c;
-  padding-left: 13px;
-}
-
-:where(.photo-demo) .hero-facts .pp-icon {
-  width: 16px;
-  height: 16px;
-}
-
-:where(.photo-demo) .hero-art {
-  position: relative;
-  min-width: 0;
-  align-self: stretch;
-}
-
-:where(.photo-demo) .art-grid {
-  position: absolute;
-  inset: 0 -6% 0 -18%;
-  opacity: .53;
-  background-image: radial-gradient(#b98b47 1px,transparent 1.35px);
-  background-size: 10px 10px;
-  mask-image: linear-gradient(105deg,transparent 1%,#000 80%);
-}
-
-:where(.photo-demo) .paper {
-  position: absolute;
-  background: #fffdf6;
-  padding: 7px 7px 14px;
-  box-shadow: 1px 6px 10px #54381330,0 1px 2px #4d372538;
-  transform-origin: center;
-}
-
-:where(.photo-demo) .paper img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-:where(.photo-demo) .paper-lake {
-  width: 36%;
-  height: 81%;
-  left: 2%;
-  top: 16%;
-  transform: rotate(-14deg);
-}
-
-:where(.photo-demo) .paper-lake img {
-  object-position: 50% 42%;
-}
-
-:where(.photo-demo) .paper-city {
-  width: 37%;
-  height: 78%;
-  right: 4%;
-  top: 11%;
-  transform: rotate(13deg);
-}
-
-:where(.photo-demo) .paper-coast {
-  width: 43%;
-  height: 91%;
-  left: 28%;
-  top: 4%;
-  transform: rotate(-5deg);
-  padding: 8px 8px 19px;
-}
-
-:where(.photo-demo) .paper-coast img {
-  object-position: 50% 53%;
-}
-
-:where(.photo-demo) .sunmark {
-  position: absolute;
-  bottom: 1%;
-  right: 9%;
-  width: 66px;
-  height: 66px;
-  color: #ffc22c;
-  transform: rotate(14deg);
 }
 
 #print-app {
@@ -367,11 +204,12 @@
   margin-bottom: 16px;
 }
 
-#print-app h2,
-:where(.photo-demo) .price-info h2 {
+#print-app h1 {
   font-size: clamp(28px,2.6vw,38px);
+  text-wrap: balance;
 }
 
+#print-app .panel-head h2,
 #print-app h3 {
   font-size: 22px;
   letter-spacing: -.037em;
@@ -379,6 +217,7 @@
 
 #print-app .how {
   position: relative;
+  flex-shrink: 0;
 }
 
 #print-app .how summary {
@@ -418,6 +257,20 @@
   padding-left: 21px;
 }
 
+#print-app .demo-delivery {
+  min-width: 0;
+  margin: 15px 0;
+  padding: 0;
+  border: 0;
+}
+
+#print-app .demo-delivery legend {
+  padding: 0;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 700;
+}
+
 #print-app .how p {
   margin: 0;
   font-size: 14px;
@@ -446,13 +299,13 @@
   border-bottom: 1px solid var(--line);
 }
 
-#print-app .panel-head h3 {
+#print-app .panel-head h2 {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-:where(.photo-demo, #print-app) .panel-head h3 i {
+:where(.photo-demo, #print-app) .panel-head h2 i {
   color: #42473e;
 }
 
@@ -1099,16 +952,6 @@
   flex-wrap: wrap;
 }
 
-@media(min-width:1450px) {
-  :where(.photo-demo) .hero {
-    min-height: 313px;
-  }
-
-  :where(.photo-demo) .hero-copy {
-    padding-left: 46px;
-  }
-}
-
 @media(max-width:1100px) {
   :where(.photo-demo) .outer {
     width: calc(100% - 56px);
@@ -1117,10 +960,6 @@
   :where(.photo-demo) .mast nav {
     margin-left: 5px;
     gap: 22px;
-  }
-
-  :where(.photo-demo) .hero-copy {
-    padding-left: 30px;
   }
 
   #print-app .work-grid {
@@ -1132,7 +971,7 @@
     padding: 16px;
   }
 
-  #print-app h3 {
+  #print-app .panel-head h2, #print-app h3 {
     font-size: 20px;
   }
 
@@ -1157,35 +996,6 @@
 @media(max-width:850px) {
   :where(.photo-demo) .mast nav {
     display: none;
-  }
-
-  :where(.photo-demo) .hero {
-    grid-template-columns: 1.05fr 1fr;
-    min-height: 250px;
-  }
-
-  :where(.photo-demo) .hero-copy {
-    padding: 24px;
-  }
-
-  :where(.photo-demo) .hero h1 {
-    font-size: 47px;
-  }
-
-  :where(.photo-demo) .hero-facts {
-    gap: 8px;
-  }
-
-  :where(.photo-demo) .hero-facts span+span {
-    padding-left: 8px;
-  }
-
-  :where(.photo-demo) .hero-art {
-    margin-right: -12px;
-  }
-
-  :where(.photo-demo) .sunmark {
-    width: 52px;
   }
 
   :where(.photo-demo) .price-info {
@@ -1226,73 +1036,8 @@
     width: 166px;
   }
 
-  :where(.photo-demo) .locations {
-    font-size: 14px;
-  }
-
-  :where(.photo-demo) .locations i:last-child {
-    display: none;
-  }
-
   :where(.photo-demo) .crumb {
     margin: 12px 0;
-  }
-
-  :where(.photo-demo) .hero {
-    min-height: 237px;
-    grid-template-columns: 1.1fr .9fr;
-  }
-
-  :where(.photo-demo) .hero-copy {
-    padding: 20px;
-  }
-
-  :where(.photo-demo) .hero h1 {
-    font-size: 41px;
-  }
-
-  :where(.photo-demo) .hero p {
-    font-size: 15px;
-  }
-
-  :where(.photo-demo) .hero-facts {
-    gap: 5px;
-  }
-
-  :where(.photo-demo) .hero-facts span+span {
-    border: none;
-    padding: 0;
-  }
-
-  :where(.photo-demo) .hero-facts {
-    display: grid;
-    margin-top: 10px;
-  }
-
-  :where(.photo-demo) .sunmark {
-    right: 7%;
-    bottom: 3%;
-  }
-
-  :where(.photo-demo) .hero-art {
-    margin-right: -15px;
-  }
-
-  :where(.photo-demo) .paper-lake {
-    left: 0;
-    height: 74%;
-    top: 16%;
-  }
-
-  :where(.photo-demo) .paper-city {
-    right: 1%;
-    height: 70%;
-    top: 13%;
-  }
-
-  :where(.photo-demo) .paper-coast {
-    height: 80%;
-    top: 8%;
   }
 
   #print-app {
@@ -1303,7 +1048,7 @@
     grid-template-columns: 1fr;
   }
 
-  #print-app h2 {
+  #print-app h1 {
     font-size: 29px;
   }
 
@@ -1345,84 +1090,20 @@
     width: calc(100% - 28px);
   }
 
-  :where(.photo-demo) .hero {
-    grid-template-columns: 1fr;
-    min-height: 0;
-  }
-
-  :where(.photo-demo) .hero-copy {
-    padding: 23px 23px 0;
-  }
-
-  :where(.photo-demo) .hero h1 {
-    font-size: 45px;
-    margin: 12px 0;
-  }
-
-  :where(.photo-demo) .hero h1 br {
-    display: none;
-  }
-
-  :where(.photo-demo) .hero p {
-    max-width: 31ch;
-  }
-
-  :where(.photo-demo) .desktop-break {
-    display: none;
-  }
-
-  :where(.photo-demo) .hero-facts {
-    display: flex;
-    gap: 12px;
-    margin-top: 12px;
-  }
-
-  :where(.photo-demo) .hero-facts span+span {
-    border-left: 1px solid #bcae8c;
-    padding-left: 12px;
-  }
-
-  :where(.photo-demo) .hero-art {
-    height: 150px;
-    width: 80%;
-    margin: 3px 1% -10px auto;
-  }
-
-  :where(.photo-demo) .paper-lake {
-    height: 120%;
-    top: 15%;
-    width: 34%;
-    left: 2%;
-  }
-
-  :where(.photo-demo) .paper-city {
-    height: 110%;
-    top: 24%;
-    width: 36%;
-    right: 3%;
-  }
-
-  :where(.photo-demo) .paper-coast {
-    height: 123%;
-    top: 10%;
-    width: 43%;
-    left: 29%;
-  }
-
-  :where(.photo-demo) .sunmark {
-    height: 42px;
-    width: 42px;
-    bottom: 8%;
-    right: 9%;
-  }
-
   #print-app .section-top {
-    align-items: baseline;
+    flex-direction: column;
+    align-items: flex-start;
     gap: 8px;
   }
 
-  #print-app h2 {
+  #print-app h1 {
     font-size: 26px;
+  }
+
+  #print-app .how>div {
+    left: 0;
+    right: auto;
+    max-width: calc(100vw - 36px);
   }
 
   #print-app .how summary {
@@ -1434,7 +1115,7 @@
     display: none;
   }
 
-  #print-app h3 {
+  #print-app .panel-head h2, #print-app h3 {
     font-size: 19px;
   }
 
@@ -1465,18 +1146,6 @@
     min-height: 227px;
   }
 
-  :where(.photo-demo) .locations {
-    gap: 5px;
-  }
-
-  :where(.photo-demo) .locations .pp-icon {
-    width: 17px;
-    height: 17px;
-  }
-
-  :where(.photo-demo) .price-info h2 {
-    font-size: 28px;
-  }
 }
 
 @media(prefers-reduced-motion:reduce) {
@@ -1512,7 +1181,7 @@
   text-underline-offset: 2px;
 }
 
-.photo-demo #print-app .price-info h3 .pp-icon {
+.photo-demo #print-app .price-info h2 .pp-icon {
   width: 19px;
 }
 

@@ -906,6 +906,8 @@ async function review() {
   }
   function showDemoCheckout() {
     dialog.dialog.querySelector('h2').textContent = 'Оформление заказа';
+    const delivery = el('fieldset', 'demo-delivery');
+    delivery.append(el('legend', '', 'Доставка'));
     const field = el('label', 'dialog-field');
     pickup = el('select');
     pickup.required = true;
@@ -913,7 +915,8 @@ async function review() {
     setOptions(pickup, [{id:'', label:'Выберите пункт выдачи'}, ...choices], '');
     pickup.options[0].disabled = true;
     field.append(el('span', '', 'Пункт выдачи'), pickup);
-    dialog.content.insertBefore(field, totalRow);
+    delivery.append(field);
+    dialog.content.insertBefore(delivery, totalRow);
     message.textContent = choices.length ? '' : 'Пункты выдачи пока недоступны. Проверьте настройки в демоадминке.';
     action.disabled = true;
     pickup.addEventListener('change', () => {
@@ -922,7 +925,7 @@ async function review() {
       message.textContent = center ? 'Самовывоз — ' + center.label : '';
     });
     dialog.actions.replaceChildren(button('Вернуться в корзину', 'button secondary', () => {
-      field.remove();
+      delivery.remove();
       showDemoBasket();
     }), action);
     pickup.focus();
