@@ -34,7 +34,14 @@ export async function connectWorkspace(ui,data) {
   let pollTimer, fetching=false, sessionEnding=false;
   const status=ui.$('draft-status');
   let loginDialog, checkingLogin=false;
+  const saveObservers=new Set();
+  let saveProgress='';
   const message=text=>{status.textContent=text;};
+  function saving(text){
+    saveProgress=text;
+    message(text);
+    for(const observer of saveObservers)observer(text);
+  }
   function report(error) {
     ui.feedback(error.message,'error');
   }
@@ -121,7 +128,7 @@ export async function connectWorkspace(ui,data) {
     const assets=[...new Set(ui.rows().map(p=>p.asset))];
     for(const [index,asset] of assets.entries()){
       if(!asset.assetId) {
-        message('Сохраняем оригинал '+(index+1)+' из '+assets.length+': '+asset.file.name);
+        saving('Передаём оригинал '+(index+1)+' из '+assets.length+': '+asset.file.name);
         asset.assetId=(await api.call('upload',{draftId:target,file:asset.file})).assetId;
       }
       if(!asset.assetId)throw Error('Исходник не сохранился в черновике.');
@@ -131,20 +138,28 @@ export async function connectWorkspace(ui,data) {
     if(state.groups.some(g=>g.photos.some(row=>!row.assetId))){scheduled=true;return;}
     const signature=JSON.stringify(state);
     if(signature===last && revision)return;
+    saving('Сохраняем параметры фотографий…');
     const result=await api.call('draftSave',{draftId,revision,state});
     if(target!==draftId)return;
     revision=result.revision;last=signature;writeAddress();
     message('Черновик сохранён · '+timeText(result.updatedAt)+' · хранится 3 дня');
   }
-  function save(force=false){
+  function save(force=false,onProgress){
     clearTimeout(timer);
+    if(onProgress){
+      saveObservers.add(onProgress);
+      onProgress(saveProgress||'Сохраняем фотографии и параметры…');
+    }
     const pending=chain.catch(()=>{}).then(async()=>{
       if(blocked)throw Error('Черновик изменился в другой вкладке. Откройте сохранённую версию в разделе «Черновики».');
       do{scheduled=false;await saveOnce(force);}while(scheduled);
     });
     chain=pending.catch(e=>{if(e.code==='DRAFT_CONFLICT')blocked=true;if(e.code==='AUTH_REQUIRED')report(e);message('Сохранение черновика: '+e.message);throw e;});
     chain.catch(()=>{});
-    return chain;
+    const result=chain.finally(()=>{saveProgress='';if(onProgress)saveObservers.delete(onProgress);});
+    // Background saves can intentionally leave their result unobserved.
+    result.catch(()=>{});
+    return result;
   }
   function changed(){
     if(!allowSave||blocked||phoneKey||!auth?.authorized||sessionEnding)return;

@@ -4,7 +4,7 @@ import { photoPreview, releasePreviews, createCropEditor, cropPose, setCropPose 
 import { constrainFrameEdits, layoutPrint, renderPrint } from './print-render.js';
 import { readPrintAsset } from './photo-input.js';
 import {createAccountAPI} from './account-api.js?v=2.3.1';
-import {connectWorkspace} from './photo-workspace.js?v=2.3.1';
+import {connectWorkspace} from './photo-workspace.js?v=2.3.4';
 import {productionRuns, safePrintBasename} from './production-folders.js?v=2.2.3';
 
 const root = document.getElementById('print-app');
@@ -782,7 +782,8 @@ async function preparedId(group, photo, requiredKeys) {
   return data.printId;
 }
 async function goToBasket(setProgress) {
-  await workspace.save(true);
+  setProgress('Сохраняем фотографии и параметры…');
+  await workspace.save(true,setProgress);
   draftId=workspace.draftId;
   const assets = Array.from(new Set(allPhotos().map((photo) => photo.asset)));
   draftId ??= id();
@@ -926,9 +927,13 @@ async function finishDemoOrder(dialog, message, number, center) {
   dialog.actions.append(button('Скачать ZIP заказа', 'button primary', () => downloadBlob(blob, saved?.filename || filename)));
 }
 async function review() {
-  if (busy || !canCheckout()) return;
-  try{await workspace.save(true);}catch(e){feedback(e.message,'error');return;}
-  if (await synchronizeDemo() || openDialog?.open) return;
+  if (busy || !canCheckout() || openDialog?.open) return;
+  // Production originals can still be uploading in the background. Open the
+  // working dialog before awaiting that queue, so the first click is visible.
+  if (!endpoint) {
+    try{await workspace.save(true);}catch(e){feedback(e.message,'error');return;}
+    if (await synchronizeDemo() || openDialog?.open) return;
+  }
   const dialog = showDialog(endpoint ? 'Добавление в корзину' : 'Корзина');
   const list = el('div', 'review-list');
   const rows = [];
@@ -960,7 +965,16 @@ async function review() {
   const message = el('p', 'review-note', endpoint
     ? 'Готовим фотографии для корзины магазина.' : '');
   message.setAttribute('role', 'status');
-  dialog.content.append(message);
+  let progress,elapsed;
+  if (endpoint) {
+    const panel=el('div','checkout-progress');
+    progress=el('progress');
+    progress.setAttribute('aria-label','Подготовка фотографий для корзины');
+    elapsed=el('p','checkout-elapsed');
+    const hint=el('p','checkout-hint','Передаём оригиналы и готовим файлы для печати. Оставьте страницу открытой до перехода в корзину.');
+    panel.append(message,progress,elapsed,hint);
+    dialog.content.prepend(panel);
+  } else dialog.content.append(message);
   if (!endpoint) {
     const assets = new Set(rows.map(({ photo }) => photo.asset));
     const bytes = Array.from(assets).reduce((sum, asset) => sum + asset.file.size, 0);
@@ -977,8 +991,20 @@ async function review() {
     dialog.dialog.addEventListener('cancel', preventCancel);
     for (const control of dialog.dialog.querySelectorAll('button, select')) control.disabled = true;
     setBusy(true);
+    const started=performance.now();
+    let elapsedTimer;
+    if (endpoint) {
+      progress.hidden=false;
+      const updateElapsed=()=>{elapsed.textContent='Прошло '+Math.floor((performance.now()-started)/1000)+' с';};
+      updateElapsed();elapsedTimer=setInterval(updateElapsed,1000);
+      action.textContent='Добавляем в корзину…';
+    }
     try {
-      if (endpoint) await goToBasket((status) => { message.textContent = status; });
+      if (endpoint) {
+        // Let the modal paint before image decoding or encoding starts.
+        await new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
+        await goToBasket((status) => { message.textContent = status; });
+      }
       else await finishDemoOrder(dialog, message, number, center);
     } catch (error) {
       message.textContent = error.name === 'QuotaExceededError' || error instanceof RangeError
@@ -1011,6 +1037,8 @@ async function review() {
       }
     }
     finally {
+      if(elapsedTimer)clearInterval(elapsedTimer);
+      if(endpoint){progress.hidden=true;action.textContent='Повторить добавление';}
       delete dialog.dialog.dataset.working;
       dialog.dialog.removeEventListener('cancel', preventCancel);
       for (const control of dialog.dialog.querySelectorAll('button, select')) control.disabled = false;
