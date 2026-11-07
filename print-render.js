@@ -132,7 +132,7 @@ export function layoutPrint(photo, format, catalog) {
   return {width, height, aperture, background, source, destination, view, mm};
 }
 
-async function jpegWithPrintDensity(blob, density) {
+export async function jpegWithPrintDensity(blob, density) {
   // Canvas encoders default to screen DPI. Write the actual physical print density
   // into the JPEG without re-encoding pixels or copying its full payload.
   const prefix = new Uint8Array(await blob.slice(0, 20).arrayBuffer());

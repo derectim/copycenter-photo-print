@@ -1,0 +1,22 @@
+.doc-config { max-width: 1100px; color: #263441; font: 400 16px/1.5 Arial, sans-serif; }
+.doc-config * { box-sizing: border-box; }
+.doc-config h1, .doc-config h2, .doc-config h3, .doc-config legend, .doc-config summary { color: #263441; font-style: normal; }
+.doc-config h2 { margin: 24px 0 8px; font-size: 22px; }
+.doc-config label, .doc-config p, .doc-config input, .doc-config textarea, .doc-config button, .doc-config summary { font: inherit; font-size: 14px; }
+.doc-config fieldset { min-width: 0; margin: 16px 0; padding: 18px; border: 1px solid #bac7ce; border-radius: 8px; background: #fff; }
+.doc-config legend { padding: 0 6px; font-size: 16px; font-weight: 700; }
+.doc-config label { display: grid; gap: 5px; }
+.doc-config input[type=text], .doc-config input[type=number], .doc-config textarea { width: 100%; min-width: 0; min-height: 38px; padding: 8px 10px; border: 1px solid #bac7ce; border-radius: 4px; color: #263441; background: #fff; }
+.doc-config input[readonly] { background: #f4f6f7; }
+.doc-config .doc-config-check { display: flex; align-items: center; gap: 10px; }
+.doc-config .doc-config-check input { width: 18px; height: 18px; }
+.doc-config .doc-config-fields { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(190px,100%),1fr)); gap: 14px; }
+.doc-config .doc-config-help { display: grid; gap: 12px; margin-top: 14px; }
+.doc-config details { padding: 12px 0; }
+.doc-config summary { cursor: pointer; font-weight: 700; }
+.doc-config button { min-height: 40px; padding: 9px 16px; border: 1px solid #bac7ce; border-radius: 5px; background: #fff; color: #263441; cursor: pointer; }
+.doc-config button[type=submit] { margin: 18px 0; background: #ffbe2a; border-color: #e2a209; font-weight: 700; }
+.doc-config .doc-config-remove { margin-top: 8px; color: #8b3025; }
+.doc-config [role=alert] { color: #8b3025; }
+.doc-config :focus-visible { outline: 3px solid #1e74a5; outline-offset: 2px; }
+.doc-config p { margin: 10px 0; }

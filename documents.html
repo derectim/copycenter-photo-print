@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>Фотографии на документы — Копицентр.РФ</title>
+<link rel="stylesheet" href="./document-photo.css?v=2.4.0"><script type="module" src="./document-photo-app.js?v=2.4.0"></script></head>
+<body class="document-photo-demo">
+<!--document-widget:start-->
+<section id="document-photo-app" aria-labelledby="dp-title">
+  <nav class="dp-breadcrumbs" aria-label="Хлебные крошки"><a href="https://копицентр.рф/">Главная</a><span aria-hidden="true">›</span><a href="./documents-service.html">Фото на документы</a><span aria-hidden="true">›</span><span aria-current="page">Подготовка фотографий</span></nav>
+  <header class="dp-heading"><p class="dp-eyebrow">Готовый снимок → печатный лист</p><h1 id="dp-title">Заказать готовые фотографии на документы со скидкой 50%</h1><p>Выберите размер, подгоните кадр и проверьте результат перед печатью.</p></header>
+  <ol id="dp-help" class="dp-help" aria-label="Как подготовить фотографии"></ol>
+  <div id="dp-demo-note" class="dp-note" hidden>Демонстрация: фотография остаётся в этом браузере. Можно скачать готовый JPG; заказ и оплата здесь не создаются.</div>
+  <div id="dp-auth" class="dp-note" hidden></div>
+  <div class="dp-toolbar"><button id="dp-drafts" type="button" class="dp-button dp-secondary" hidden>Мои черновики</button><button id="dp-new" type="button" class="dp-button dp-secondary">Новый снимок</button><span id="dp-draft-status" role="status"></span></div>
+  <div class="dp-grid">
+    <section class="dp-panel dp-workspace" aria-labelledby="dp-editor-title">
+      <div class="dp-panel-heading"><h2 id="dp-editor-title">1. Подготовьте кадр</h2><span id="dp-size-label"></span></div>
+      <input id="dp-file" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" hidden>
+      <div id="dp-drop" class="dp-drop"><span class="dp-upload-symbol" aria-hidden="true">↑</span><h3>Добавьте фотографию</h3><p>Перетащите снимок сюда или выберите файл.<br>JPG, PNG, WebP, HEIC и HEIF · до 20 МБ</p><button id="dp-upload" type="button" class="dp-button dp-primary">Выбрать фотографию</button></div>
+      <div id="dp-edit" hidden>
+        <div class="dp-crop-columns">
+          <div class="dp-crop-column"><div class="dp-view-caption"><strong>Подгонка по направляющим</strong><label><input id="dp-guides-visible" type="checkbox" checked> Показать</label></div>
+            <div class="dp-stage"><div id="dp-crop-stage" class="dp-photo-stage" tabindex="0" role="group" aria-label="Перемещение снимка: перетаскивание или стрелки клавиатуры"><canvas id="dp-crop-canvas" role="img" aria-label="Фотография с кадрированием"></canvas>
+              <svg id="dp-guides" class="dp-guides" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><line x1="50" x2="50" y1="0" y2="100" class="dp-center-line"/><ellipse id="dp-guide-oval"/><line id="dp-guide-crown" x1="0" x2="100"/><line id="dp-guide-eyes" x1="0" x2="100"/><line id="dp-guide-chin" x1="0" x2="100"/></svg>
+            </div></div><p class="dp-hint">Перетащите фотографию. Стрелки клавиатуры сдвигают кадр; Shift — больший шаг.</p>
+          </div>
+          <div class="dp-crop-column"><strong class="dp-view-caption">Готовая фотография</strong><div class="dp-stage dp-clean-stage"><canvas id="dp-proof" role="img" aria-label="Готовая фотография без направляющих"></canvas></div><p class="dp-hint">Именно этот кадр попадёт на лист.</p></div>
+        </div>
+        <div class="dp-controls"><label class="dp-slider"><span>Масштаб <output id="dp-zoom-value">100%</output></span><input id="dp-zoom" type="range" min="100" max="500" step="1" value="100"></label><label class="dp-slider"><span>Поворот <output id="dp-angle-value">0°</output></span><input id="dp-angle" type="range" min="-180" max="180" step="0.5" value="0"></label>
+          <div class="dp-command-row"><button id="dp-turn-left" type="button" class="dp-button dp-secondary">↶ 90°</button><button id="dp-turn-right" type="button" class="dp-button dp-secondary">↷ 90°</button><button id="dp-reset" type="button" class="dp-button dp-secondary">Сбросить кадр</button><button id="dp-replace" type="button" class="dp-button dp-secondary">Заменить фото</button></div>
+        </div>
+        <details class="dp-guide-settings"><summary>Настроить направляющие</summary><p>Это ориентиры для ручного совмещения. Положения можно менять; на печатном листе их нет.</p><div class="dp-guide-grid"><label>Макушка<input id="dp-crown" type="range" min="1" max="99" value="10"></label><label>Линия глаз<input id="dp-eyes" type="range" min="1" max="99" value="40"></label><label>Подбородок<input id="dp-chin" type="range" min="1" max="99" value="80"></label><label>Ширина овала<input id="dp-head-width" type="range" min="1" max="99" value="60"></label></div></details>
+      </div>
+    </section>
+    <aside class="dp-panel dp-order" aria-labelledby="dp-order-title"><h2 id="dp-order-title">2. Выберите комплект</h2>
+      <label class="dp-field">Размер фотографии<select id="dp-format"></select></label><p id="dp-format-note" class="dp-hint"></p>
+      <div class="dp-sheet-heading"><h3>Печатный лист</h3><span id="dp-sheet-size">10 × 15 см</span></div><div class="dp-sheet-wrap"><canvas id="dp-sheet" role="img" aria-label="Печатный лист с готовыми фотографиями"></canvas><p id="dp-sheet-empty">Здесь появится готовый лист</p></div>
+      <div class="dp-field dp-sets"><label for="dp-sets">Количество комплектов</label><div class="dp-stepper"><button id="dp-minus" type="button" aria-label="Уменьшить число комплектов">−</button><input id="dp-sets" type="number" min="1" max="99" value="1" inputmode="numeric"><button id="dp-plus" type="button" aria-label="Увеличить число комплектов">+</button></div></div>
+      <div class="dp-prices"><p><span>Один комплект</span><span><s id="dp-base-price"></s> <strong id="dp-price">—</strong></span></p><p class="dp-total"><strong>Итого</strong><strong id="dp-total">—</strong></p></div>
+      <p id="dp-price-note" class="dp-hint"></p><button id="dp-cart" type="button" class="dp-button dp-primary dp-wide" disabled>В корзину →</button><button id="dp-download" type="button" class="dp-button dp-secondary dp-wide" disabled>Скачать лист JPG</button>
+      <div id="dp-progress" class="dp-progress" hidden><progress aria-label="Подготовка заказа"></progress><p id="dp-progress-text" role="status"></p></div>
+    </aside>
+  </div>
+  <p id="dp-feedback" class="dp-feedback" role="status" aria-live="polite"></p>
+  <div id="dp-drafts-panel" class="dp-panel dp-drafts" hidden><div class="dp-panel-heading"><h2>Мои черновики</h2><button id="dp-drafts-close" type="button" class="dp-button dp-secondary">Закрыть</button></div><div id="dp-drafts-list"></div></div>
+</section>
+<!--document-widget:end-->
+</body></html>
