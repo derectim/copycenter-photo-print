@@ -3,8 +3,9 @@ import { makeZip } from './zip.js';
 import { photoPreview, releasePreviews, createCropEditor, cropPose, setCropPose } from './photo-editor.js?v=2.1';
 import { constrainFrameEdits, layoutPrint, renderPrint } from './print-render.js';
 import { readPrintAsset } from './photo-input.js';
-import {createAccountAPI} from './account-api.js?v=2.3.1';
+import {createAccountAPI} from './account-api.js?v=2.3.5';
 import {connectWorkspace} from './photo-workspace.js?v=2.3.4';
+import {checkoutDiagnostics, copyCheckoutDiagnostics, mountCheckoutDiagnostics} from './checkout-diagnostics.js?v=2.3.5';
 import {productionRuns, safePrintBasename} from './production-folders.js?v=2.2.3';
 
 const root = document.getElementById('print-app');
@@ -48,6 +49,18 @@ let workspace;
 const selectedPhotos = new Set();
 let groupPrices = new Map();
 const catalogIndexes = new WeakMap();
+
+function checkoutDebugState() {
+  const available = canCheckout();
+  const buttonDisabled = Boolean($('checkout-button')?.disabled);
+  const reason = !workspace ? 'workspace-missing' : busy ? 'busy' : !available ? 'invalid-selection'
+    : openDialog?.open ? 'dialog-open' : buttonDisabled ? 'disabled' : 'ready';
+  return {endpoint:Boolean(endpoint), busy, canCheckout:available, openDialog:Boolean(openDialog?.open),
+    workspace:Boolean(workspace), buttonDisabled, reason,
+    dialogSupported:typeof HTMLDialogElement !== 'undefined' && typeof HTMLDialogElement.prototype.showModal === 'function',
+    arrayAtSupported:typeof Array.prototype.at === 'function', objectHasOwnSupported:typeof Object.hasOwn === 'function',
+    structuredCloneSupported:typeof structuredClone === 'function'};
+}
 
 function el(tag, className, text) {
   const element = document.createElement(tag);
@@ -756,12 +769,17 @@ async function loadSamples() {
 function renditionKey(group, photo) {
   return JSON.stringify([photo.asset.assetId, group.formatId, photo.fitId, photo.frameId, photo.crop || null, photo.edits || null, catalogVersion]);
 }
-async function preparedId(group, photo, requiredKeys) {
+async function preparedId(group, photo, requiredKeys, onUpload = () => {}) {
   const asset = photo.asset;
   asset.prints ??= new Map();
   const key = renditionKey(group, photo);
   if (asset.prints.has(key)) return asset.prints.get(key);
-  const jpeg = await renderPrint(photo, formatOf(group), catalog);
+  const finishRender = checkoutDiagnostics.start('renderPrint');
+  let jpeg;
+  try {
+    jpeg = await renderPrint(photo, formatOf(group), catalog);
+    finishRender('ok', {fileBytes:jpeg.size});
+  } catch (error) { finishRender('error'); throw error; }
   if (jpeg.size > limits.maxFileBytes) throw Error('Подготовленный отпечаток «' + asset.file.name + '» больше ' + (limits.maxFileBytes / MiB).toLocaleString('ru-RU') + ' МБ.');
   const form = new FormData();
   form.set('draftId', draftId);
@@ -775,6 +793,7 @@ async function preparedId(group, photo, requiredKeys) {
   form.set('catalogVersion', catalogVersion);
   const replaceKey = Array.from(asset.prints.keys()).find((candidate) => !requiredKeys.has(candidate));
   if (replaceKey) form.set('replacePrintId', asset.prints.get(replaceKey));
+  onUpload();
   const data = await accountAPI.call('rendition', form);
   if (!data.printId) throw Error('Магазин не подтвердил загрузку отпечатка. Повторите попытку.');
   if (replaceKey) asset.prints.delete(replaceKey);
@@ -783,7 +802,9 @@ async function preparedId(group, photo, requiredKeys) {
 }
 async function goToBasket(setProgress) {
   setProgress('Сохраняем фотографии и параметры…');
-  await workspace.save(true,setProgress);
+  const finishSave = checkoutDiagnostics.start('saveQueue');
+  try { await workspace.save(true,setProgress); finishSave(); }
+  catch (error) { finishSave('error'); throw error; }
   draftId=workspace.draftId;
   const assets = Array.from(new Set(allPhotos().map((photo) => photo.asset)));
   draftId ??= id();
@@ -812,7 +833,9 @@ async function goToBasket(setProgress) {
   const items = [];
   for (const [index, { group, photo }] of rows.entries()) {
     setProgress('Готовим отпечаток ' + (index + 1) + ' из ' + rows.length + '…');
-    const printId = await preparedId(group, photo, requiredKeys);
+    const printId = await preparedId(group, photo, requiredKeys, () => {
+      setProgress('Передаём готовый отпечаток ' + (index + 1) + ' из ' + rows.length + '…');
+    });
     items.push({
       assetId: photo.asset.assetId, formatId: group.formatId, paperId: photo.paperId, fitId: photo.fitId,
       frameId: photo.frameId, extraIds: photo.extraIds || [], copies: photo.copies, crop: photo.crop || null, edits:photo.edits || null, printId
@@ -927,6 +950,7 @@ async function finishDemoOrder(dialog, message, number, center) {
   dialog.actions.append(button('Скачать ZIP заказа', 'button primary', () => downloadBlob(blob, saved?.filename || filename)));
 }
 async function review() {
+  if (checkoutDiagnostics.enabled) checkoutDiagnostics.record('review', checkoutDebugState());
   if (busy || !canCheckout() || openDialog?.open) return;
   // Production originals can still be uploading in the background. Open the
   // working dialog before awaiting that queue, so the first click is visible.
@@ -935,6 +959,7 @@ async function review() {
     if (await synchronizeDemo() || openDialog?.open) return;
   }
   const dialog = showDialog(endpoint ? 'Добавление в корзину' : 'Корзина');
+  if (checkoutDiagnostics.enabled) checkoutDiagnostics.record('modalOpen', checkoutDebugState());
   const list = el('div', 'review-list');
   const rows = [];
   for (const group of groups.filter((entry) => entry.photos.length)) {
@@ -983,14 +1008,22 @@ async function review() {
     }
   }
   const number = 'DEMO-' + Date.now().toString(36).toUpperCase() + '-' + id().slice(0, 6).toUpperCase();
+  let diagnosticCopy;
+  if (endpoint && checkoutDiagnostics.enabled) {
+    diagnosticCopy = button('Скопировать диагностику', 'button secondary', () => copyCheckoutDiagnostics(diagnosticCopy, dialog.content, checkoutDebugState));
+    diagnosticCopy.dataset.diagnostic = 'true';
+  }
   let pickup;
   const action = button(endpoint ? 'Повторить добавление' : 'Создать демозаказ', 'button primary', async () => {
     const center = endpoint ? null : byId('centers', pickup.value);
     if (!endpoint && !center) { pickup.reportValidity(); return; }
     dialog.dialog.dataset.working = 'true';
     dialog.dialog.addEventListener('cancel', preventCancel);
-    for (const control of dialog.dialog.querySelectorAll('button, select')) control.disabled = true;
+    for (const control of dialog.dialog.querySelectorAll('button, select')) {
+      if (!control.dataset.diagnostic) control.disabled = true;
+    }
     setBusy(true);
+    const finishCheckout = endpoint ? checkoutDiagnostics.start('checkout') : () => {};
     const started=performance.now();
     let elapsedTimer;
     if (endpoint) {
@@ -1004,9 +1037,11 @@ async function review() {
         // Let the modal paint before image decoding or encoding starts.
         await new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
         await goToBasket((status) => { message.textContent = status; });
+        finishCheckout();
       }
       else await finishDemoOrder(dialog, message, number, center);
     } catch (error) {
+      finishCheckout('error');
       message.textContent = error.name === 'QuotaExceededError' || error instanceof RangeError
         ? 'Браузеру не хватило места для подготовки архива. Освободите место или разделите заказ на части.' : error.message;
       if (['PRICE_CHANGED', 'CATALOG_CHANGED', 'ASSET_EXPIRED', 'PRINT_EXPIRED'].includes(error.code)) {
@@ -1047,7 +1082,7 @@ async function review() {
     }
   });
   if (endpoint) {
-    dialog.actions.append(button('Вернуться', 'button secondary', dialog.close), action);
+    dialog.actions.append(button('Вернуться', 'button secondary', dialog.close), ...(diagnosticCopy ? [diagnosticCopy] : []), action);
     action.click();
     return;
   }
@@ -1207,7 +1242,10 @@ function bindControls() {
     }
     updateDefaults('copies', Number(copies.value));
   });
-  $('checkout-button').addEventListener('click', ()=>workspace?.gate(review));
+  $('checkout-button').addEventListener('click', ()=>{
+    if (checkoutDiagnostics.enabled) checkoutDiagnostics.record('checkoutHandler', checkoutDebugState());
+    workspace?.gate(review);
+  });
   $('select-all-photos').addEventListener('change',e=>{
     for(const photo of active.photos)e.target.checked?selectedPhotos.add(photo):selectedPhotos.delete(photo);
     render();
@@ -1294,6 +1332,7 @@ async function addPhonePhoto(info,file){
 }
 async function initialize() {
   if (!root) return;
+  const finishInitialize = checkoutDiagnostics.start('initialize', {endpoint:Boolean(endpoint)});
   setBusy(true);
   $('checkout-button').disabled = true;
   if (endpoint) {
@@ -1324,10 +1363,22 @@ async function initialize() {
     }
     setBusy(false);
     render();
+    finishInitialize('ok');
   } catch (error) {
-    for (const control of root.querySelectorAll('button, input, select')) control.disabled = true;
+    finishInitialize('error');
+    for (const control of root.querySelectorAll('button, input, select')) {
+      if (!control.dataset.diagnostic) control.disabled = true;
+    }
     root.setAttribute('aria-busy', 'false');
     feedback(error.message, 'error');
+  }
+}
+if (root && checkoutDiagnostics.enabled) {
+  mountCheckoutDiagnostics(root, checkoutDebugState);
+  for (const [type, action] of [['pointerdown','pointerCheckout'], ['click','clickCheckout']]) {
+    root.addEventListener(type, event => {
+      if (event.target.closest?.('#checkout-button')) checkoutDiagnostics.record(action, checkoutDebugState());
+    }, true);
   }
 }
 initialize();

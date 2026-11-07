@@ -1,3 +1,5 @@
+import {checkoutDiagnostics, diagnosticServerTiming} from './checkout-diagnostics.js?v=2.3.5';
+
 const readActions = new Set(['config', 'session', 'libraryList', 'draftList', 'draftLoad', 'phoneInbox', 'basketProjects']);
 const uploadActions = new Set(['upload', 'rendition', 'libraryUpload', 'phoneUpload']);
 const authCodes = new Set(['AUTH_REQUIRED', 'ACCOUNT_CHANGED']);
@@ -28,21 +30,42 @@ export function createAccountAPI(endpoint) {
     }
     throw error;
   }
-  async function send(url, init, binary = false) {
+  async function send(url, init, binary = false, action = 'file') {
     if (url.origin !== location.origin) throw Error('Адрес модуля должен находиться на домене магазина.');
+    const sizes = {};
+    if (checkoutDiagnostics.enabled) {
+      if (init.body instanceof FormData) sizes.fileBytes = init.body.get('file')?.size;
+      else if (typeof init.body === 'string') sizes.bodyBytes = new TextEncoder().encode(init.body).length;
+    }
+    const finish = checkoutDiagnostics.start(action, sizes);
+    const headers = checkoutDiagnostics.enabled ? {...init.headers, 'X-Photoprint-Debug':'1'} : init.headers;
     let response;
     try {
-      response = await fetch(url, { ...init, mode: 'same-origin', credentials: 'same-origin', cache: 'no-store', redirect: 'error' });
+      response = await fetch(url, { ...init, headers, mode: 'same-origin', credentials: 'same-origin', cache: 'no-store', redirect: 'error' });
     } catch {
+      finish('network-error');
       throw Error('Не удалось связаться с магазином. Проверьте соединение и повторите попытку.');
     }
-    if (response.ok && binary) return response.blob();
+    const resultTiming = {httpStatus:response.status, ...(checkoutDiagnostics.enabled
+      ? diagnosticServerTiming(response.headers.get('Server-Timing')) : {})};
+    if (response.ok && binary) {
+      try {
+        const blob = await response.blob();
+        finish('ok', {...resultTiming, responseBytes:blob.size});
+        return blob;
+      } catch (error) {
+        finish('network-error', resultTiming);
+        throw error;
+      }
+    }
     const data = await response.json().catch(() => ({ error: 'Магазин вернул неожиданный ответ. Повторите попытку позже.' }));
     if (!response.ok || data.error) {
+      finish('error', resultTiming);
       const error = Error(data.error || 'Магазин вернул неожиданный ответ. Повторите попытку позже.');
       Object.assign(error, { status: response.status, code: data.code, missingAssetIds: data.missingAssetIds, missingPrintIds: data.missingPrintIds });
       throw error;
     }
+    finish('ok', resultTiming);
     return data;
   }
   function request(action, args, csrf) {
@@ -64,7 +87,7 @@ export function createAccountAPI(endpoint) {
       init.headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify({ ...args, sessid: csrf });
     }
-    return send(url, init);
+    return send(url, init, false, action);
   }
   function refresh() {
     // Several saves/uploads can see the same rejected token at once.
